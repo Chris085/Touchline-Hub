@@ -1,0 +1,501 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { collection, query, where, onSnapshot, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, arrayUnion } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useNavigate } from 'react-router-dom';
+import { Users, Plus, Trash2, Shield, Copy, Check, UserPlus, ChevronRight } from 'lucide-react';
+import { motion } from 'motion/react';
+
+interface Player {
+  id: string;
+  name: string;
+  teamId: string;
+  parentIds: string[];
+  inviteCode?: string;
+  motmAwards: number;
+  position?: string;
+}
+
+import { ConfirmModal } from '../components/ConfirmModal';
+
+export function Roster() {
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [team, setTeam] = useState<any>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerPosition, setNewPlayerPosition] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [invitePlayer, setInvitePlayer] = useState<Player | null>(null);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [joinError, setJoinError] = useState('');
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
+
+  useEffect(() => {
+    if (!profile?.teamId) return;
+
+    // Fetch team details
+    const fetchTeam = async () => {
+      try {
+        const teamDoc = await getDoc(doc(db, 'teams', profile.teamId!));
+        if (teamDoc.exists()) {
+          setTeam({ id: teamDoc.id, ...teamDoc.data() });
+        }
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, `teams/${profile.teamId}`);
+      }
+    };
+    fetchTeam();
+
+    // Fetch players
+    const playersRef = collection(db, 'players');
+    const q = profile.role === 'coach'
+      ? query(playersRef, where('teamId', '==', profile.teamId))
+      : query(playersRef, where('parentIds', 'array-contains', profile.uid));
+    
+    const unsub = onSnapshot(q, (snapshot) => {
+      const playersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player));
+      // Sort by name
+      playersData.sort((a, b) => a.name.localeCompare(b.name));
+      setPlayers(playersData);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'players'));
+
+    return () => unsub();
+  }, [profile?.teamId, profile?.uid, profile?.role]);
+
+  const generateInviteCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'P-';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+
+  const handleInviteClick = async (player: Player) => {
+    if (!player.inviteCode) {
+      const newCode = generateInviteCode();
+      try {
+        await updateDoc(doc(db, 'players', player.id), {
+          inviteCode: newCode
+        });
+        setInvitePlayer({ ...player, inviteCode: newCode });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `players/${player.id}`);
+      }
+    } else {
+      setInvitePlayer(player);
+    }
+  };
+
+  const handleAddPlayer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.teamId || !newPlayerName.trim()) return;
+
+    try {
+      await addDoc(collection(db, 'players'), {
+        name: newPlayerName.trim(),
+        position: newPlayerPosition,
+        teamId: profile.teamId,
+        parentIds: [],
+        inviteCode: generateInviteCode(),
+        motmAwards: 0
+      });
+      setShowAddModal(false);
+      setNewPlayerName('');
+      setNewPlayerPosition('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'players');
+    }
+  };
+
+  const handleJoinPlayer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = joinCode.trim().toUpperCase();
+    if (!code || !code.startsWith('P-')) {
+      setJoinError('Please enter a valid player invite code (e.g. P-XXXXXX)');
+      return;
+    }
+    
+    setJoinLoading(true);
+    setJoinError('');
+
+    try {
+      const playersRef = collection(db, 'players');
+      const q = query(playersRef, where('inviteCode', '==', code));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        setJoinError('Invalid player invite code. Please check with your coach.');
+        setJoinLoading(false);
+        return;
+      }
+
+      const playerDoc = querySnapshot.docs[0];
+      const playerData = playerDoc.data();
+      
+      if (playerData.parentIds && playerData.parentIds.length >= 3) {
+        setJoinError('This player already has the maximum number of parents/managers (3).');
+        setJoinLoading(false);
+        return;
+      }
+
+      if (playerData.parentIds?.includes(profile?.uid)) {
+        setJoinError('You are already managing this player.');
+        setJoinLoading(false);
+        return;
+      }
+
+      // Add user to player's parentIds
+      await updateDoc(doc(db, 'players', playerDoc.id), {
+        parentIds: arrayUnion(profile?.uid)
+      });
+
+      setShowJoinModal(false);
+      setJoinCode('');
+    } catch (err: any) {
+      try {
+        handleFirestoreError(err, OperationType.GET, 'players');
+      } catch (e: any) {
+        try {
+          const parsed = JSON.parse(e.message);
+          setJoinError(parsed.error || 'Failed to join player');
+        } catch {
+          setJoinError(e.message || 'Failed to join player');
+        }
+      }
+    } finally {
+      setJoinLoading(false);
+    }
+  };
+
+  const handleDeletePlayer = async (playerId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remove Player',
+      message: 'Are you sure you want to remove this player?',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'players', playerId));
+        } catch (error) {
+          handleFirestoreError(error, OperationType.DELETE, `players/${playerId}`);
+        }
+      }
+    });
+  };
+
+  const copyTeamCode = () => {
+    if (team?.code) {
+      navigator.clipboard.writeText(team.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const copyInviteLink = (player: Player) => {
+    if (player.inviteCode) {
+      const inviteUrl = `${window.location.origin}/?code=${player.inviteCode}`;
+      const text = `Join ${player.name}'s profile on The Touchline Hub!\n\nUse this invite link:\n${inviteUrl}\n\nOr enter code manually: ${player.inviteCode}`;
+      navigator.clipboard.writeText(text);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Team Roster</h1>
+          <p className="text-slate-400 text-sm">{team?.name || 'Loading team...'}</p>
+        </div>
+        
+        <div className="flex gap-3">
+          {profile?.role === 'coach' && team && (
+            <button
+              onClick={copyTeamCode}
+              className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors border border-slate-700"
+            >
+              {copied ? <Check size={18} className="text-green-400" /> : <Copy size={18} />}
+              <span>Code: <span className="font-mono text-green-400 tracking-widest ml-1">{team.code}</span></span>
+            </button>
+          )}
+          
+          {(profile?.role === 'coach') && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="bg-green-500 hover:bg-green-400 text-slate-950 px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors"
+            >
+              <Plus size={20} />
+              <span className="hidden sm:inline">Add Player</span>
+            </button>
+          )}
+          
+          {(profile?.role === 'parent') && (
+            <button
+              onClick={() => setShowJoinModal(true)}
+              className="bg-green-500 hover:bg-green-400 text-slate-950 px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors"
+            >
+              <Plus size={20} />
+              <span className="hidden sm:inline">Add Player</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {players.length === 0 ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center">
+          <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Users size={32} className="text-slate-500" />
+          </div>
+          <h3 className="text-xl font-semibold text-white mb-2">No players yet</h3>
+          <p className="text-slate-400">
+            {profile?.role === 'coach' 
+              ? "Add players to your roster to generate invite codes for their parents." 
+              : "Click 'Add Player' and enter an invite code from your coach."}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {players.map((player) => (
+            <motion.div
+              key={player.id}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between group cursor-pointer hover:border-slate-700 transition-colors"
+              onClick={() => navigate(`/player/${player.id}`)}
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold uppercase">
+                  {player.name.charAt(0)}
+                </div>
+                <div>
+                  <h4 className="text-white font-medium group-hover:text-green-400 transition-colors">{player.name}</h4>
+                  <div className="flex items-center gap-2 text-xs mt-0.5">
+                    {player.position && (
+                      <span className="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-medium">
+                        {player.position}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1 text-yellow-500">
+                      <Shield size={12} />
+                      <span>{player.motmAwards} MOTM</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                {profile?.role === 'coach' && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleInviteClick(player);
+                    }}
+                    className="text-slate-400 hover:text-green-400 transition-colors p-2"
+                    title="Invite Parent"
+                  >
+                    <UserPlus size={18} />
+                  </button>
+                )}
+                {(profile?.role === 'coach' || player.parentIds?.includes(profile?.uid || '')) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeletePlayer(player.id);
+                    }}
+                    className="text-slate-500 hover:text-red-400 transition-colors p-2"
+                    title="Remove Player"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                )}
+                <ChevronRight size={20} className="text-slate-600 sm:hidden group-hover:block ml-2" />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Invite Player Modal */}
+      {invitePlayer && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+          >
+            <h2 className="text-xl font-bold text-white mb-2">Invite Parent/Player</h2>
+            <p className="text-slate-400 text-sm mb-6">
+              Share this invite code with {invitePlayer.name}'s parents or the player themselves. Up to 3 people can manage this profile.
+            </p>
+            
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 mb-6 text-center">
+              <span className="text-xs text-slate-500 uppercase tracking-wider block mb-2">Player Invite Code</span>
+              <span className="text-3xl font-mono font-bold text-green-400 tracking-widest">{invitePlayer.inviteCode}</span>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setInvitePlayer(null)}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-medium transition-colors"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => copyInviteLink(invitePlayer)}
+                className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+              >
+                {inviteCopied ? <Check size={18} /> : <Copy size={18} />}
+                {inviteCopied ? 'Copied!' : 'Copy Invite'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Join Player Modal */}
+      {showJoinModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+          >
+            <h2 className="text-xl font-bold text-white mb-4">Add Another Player</h2>
+            <form onSubmit={handleJoinPlayer} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Player Invite Code</label>
+                <input
+                  type="text"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest focus:outline-none focus:border-green-500 uppercase"
+                  placeholder="P-XXXXXX"
+                  maxLength={8}
+                  required
+                  autoFocus
+                />
+              </div>
+              
+              {joinError && <div className="text-red-400 text-sm text-center">{joinError}</div>}
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => { setShowJoinModal(false); setJoinError(''); }}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={joinLoading}
+                  className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-lg font-bold transition-colors disabled:opacity-50"
+                >
+                  {joinLoading ? 'Adding...' : 'Add Player'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Add Player Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+          >
+            <h2 className="text-xl font-bold text-white mb-4">Add Player</h2>
+            <form onSubmit={handleAddPlayer} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Player Name</label>
+                <input
+                  type="text"
+                  value={newPlayerName}
+                  onChange={(e) => setNewPlayerName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500"
+                  placeholder="e.g. Marcus Rashford"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Position</label>
+                <select
+                  value={newPlayerPosition}
+                  onChange={(e) => setNewPlayerPosition(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500"
+                >
+                  <option value="">Select Position (Optional)</option>
+                  <option value="GK">Goalkeeper (GK)</option>
+                  <option value="CB">Center Back (CB)</option>
+                  <option value="LB">Left Back (LB)</option>
+                  <option value="RB">Right Back (RB)</option>
+                  <option value="LWB">Left Wing Back (LWB)</option>
+                  <option value="RWB">Right Wing Back (RWB)</option>
+                  <option value="CDM">Defensive Midfielder (CDM)</option>
+                  <option value="CM">Central Midfielder (CM)</option>
+                  <option value="CAM">Attacking Midfielder (CAM)</option>
+                  <option value="LM">Left Midfielder (LM)</option>
+                  <option value="RM">Right Midfielder (RM)</option>
+                  <option value="LW">Left Winger (LW)</option>
+                  <option value="RW">Right Winger (RW)</option>
+                  <option value="CF">Center Forward (CF)</option>
+                  <option value="ST">Striker (ST)</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-lg font-bold transition-colors"
+                >
+                  Add Player
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
+    </div>
+  );
+}

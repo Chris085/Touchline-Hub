@@ -1,0 +1,161 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application (Coach, Parent, Player)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["coach", "parent", "player"] },
+        "teamId": { "type": "string", "description": "The ID of the team they belong to" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Team": {
+      "title": "Team",
+      "description": "A football team",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "code": { "type": "string", "description": "6-digit code for parents to join" },
+        "coachId": { "type": "string" }
+      },
+      "required": ["name", "code", "coachId"]
+    },
+    "Player": {
+      "title": "Player",
+      "description": "A player on a team",
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "name": { "type": "string" },
+        "parentIds": { 
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "inviteCode": { "type": "string" },
+        "motmAwards": { "type": "number" }
+      },
+      "required": ["teamId", "name", "parentIds", "motmAwards"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "A scheduled match or training session",
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "type": { "type": "string", "enum": ["match", "training"] },
+        "matchCategory": { "type": "string", "enum": ["league", "cup", "friendly"] },
+        "opponent": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "location": { "type": "string" },
+        "postcode": { "type": "string" },
+        "trainingNotes": { "type": "string" },
+        "status": { "type": "string", "enum": ["scheduled", "in-progress", "completed"] },
+        "scoreUs": { "type": "number" },
+        "scoreThem": { "type": "number" },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["goal", "sub"] },
+              "playerId": { "type": "string" },
+              "playerName": { "type": "string" },
+              "time": { "type": "string" }
+            }
+          }
+        }
+      },
+      "required": ["teamId", "type", "date", "status"]
+    },
+    "Availability": {
+      "title": "Availability",
+      "description": "A player's availability for a match",
+      "type": "object",
+      "properties": {
+        "matchId": { "type": "string" },
+        "playerId": { "type": "string" },
+        "parentId": { "type": "string" },
+        "teamId": { "type": "string" },
+        "status": { "type": "string", "enum": ["going", "not-going", "maybe"] }
+      },
+      "required": ["matchId", "playerId", "parentId", "teamId", "status"]
+    },
+    "MotmVote": {
+      "title": "MOTM Vote",
+      "description": "A vote for Man of the Match",
+      "type": "object",
+      "properties": {
+        "matchId": { "type": "string" },
+        "playerId": { "type": "string" },
+        "parentId": { "type": "string" }
+      },
+      "required": ["matchId", "playerId", "parentId"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "A player's actual attendance for a match or training",
+      "type": "object",
+      "properties": {
+        "matchId": { "type": "string" },
+        "playerId": { "type": "string" },
+        "teamId": { "type": "string" },
+        "status": { "type": "string", "enum": ["present", "late", "absent"] }
+      },
+      "required": ["matchId", "playerId", "teamId", "status"]
+    },
+    "PlayerNote": {
+      "title": "Player Note",
+      "description": "Coach notes on a player's ability and performance",
+      "type": "object",
+      "properties": {
+        "playerId": { "type": "string" },
+        "teamId": { "type": "string" },
+        "coachId": { "type": "string" },
+        "matchId": { "type": "string" },
+        "note": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "abilityRating": { "type": "number" }
+      },
+      "required": ["playerId", "teamId", "coachId", "note", "date"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "teams/{teamId}": {
+      "schema": "Team",
+      "description": "Teams"
+    },
+    "players/{playerId}": {
+      "schema": "Player",
+      "description": "Players"
+    },
+    "matches/{matchId}": {
+      "schema": "Match",
+      "description": "Matches and training sessions"
+    },
+    "availabilities/{availabilityId}": {
+      "schema": "Availability",
+      "description": "Player availabilities"
+    },
+    "motmVotes/{voteId}": {
+      "schema": "MotmVote",
+      "description": "MOTM Votes"
+    },
+    "attendances/{attendanceId}": {
+      "schema": "Attendance",
+      "description": "Player attendance records"
+    },
+    "playerNotes/{noteId}": {
+      "schema": "PlayerNote",
+      "description": "Coach notes on players"
+    }
+  }
+}

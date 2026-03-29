@@ -1,0 +1,178 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email']) &&
+             data.uid is string &&
+             data.email is string &&
+             (!('role' in data) || data.role == null || data.role in ['coach', 'parent', 'player']) &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('photoURL' in data) || data.photoURL is string) &&
+             (!('teamId' in data) || data.teamId is string);
+    }
+
+    function isValidTeam(data) {
+      return hasRequiredFields(['name', 'code', 'coachId']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.code is string && data.code.size() == 6 &&
+             data.coachId is string;
+    }
+
+    function isValidPlayer(data) {
+      return hasRequiredFields(['teamId', 'name']) &&
+             data.teamId is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('parentIds' in data) || (data.parentIds is list && data.parentIds.size() <= 3)) &&
+             (!('inviteCode' in data) || (data.inviteCode is string && data.inviteCode.size() == 8)) &&
+             (!('motmAwards' in data) || (data.motmAwards is number && data.motmAwards >= 0));
+    }
+
+    function isValidMatch(data) {
+      return hasRequiredFields(['teamId', 'type', 'date', 'status']) &&
+             data.teamId is string &&
+             data.type in ['match', 'training'] &&
+             (!('matchCategory' in data) || data.matchCategory in ['league', 'cup', 'friendly']) &&
+             data.date is string &&
+             data.status in ['scheduled', 'in-progress', 'completed'] &&
+             (!('opponent' in data) || (data.opponent is string && data.opponent.size() < 100)) &&
+             (!('location' in data) || (data.location is string && data.location.size() < 200)) &&
+             (!('postcode' in data) || (data.postcode is string && data.postcode.size() < 20)) &&
+             (!('trainingNotes' in data) || (data.trainingNotes is string && data.trainingNotes.size() < 2000)) &&
+             (!('scoreUs' in data) || data.scoreUs is number) &&
+             (!('scoreThem' in data) || data.scoreThem is number) &&
+             (!('events' in data) || data.events is list);
+    }
+
+    function isValidAvailability(data) {
+      return hasRequiredFields(['matchId', 'playerId', 'parentId', 'teamId', 'status']) &&
+             data.matchId is string &&
+             data.playerId is string &&
+             data.parentId is string &&
+             data.teamId is string &&
+             data.status in ['going', 'not-going', 'maybe'];
+    }
+
+    function isValidMotmVote(data) {
+      return hasRequiredFields(['matchId', 'playerId', 'parentId']) &&
+             data.matchId is string &&
+             data.playerId is string &&
+             data.parentId is string;
+    }
+
+    function isValidAttendance(data) {
+      return hasRequiredFields(['matchId', 'playerId', 'teamId', 'status']) &&
+             data.matchId is string &&
+             data.playerId is string &&
+             data.teamId is string &&
+             data.status in ['present', 'late', 'absent'];
+    }
+
+    function isValidPlayerNote(data) {
+      return hasRequiredFields(['playerId', 'teamId', 'coachId', 'note', 'date']) &&
+             data.playerId is string &&
+             data.teamId is string &&
+             data.coachId is string &&
+             data.note is string && data.note.size() > 0 && data.note.size() < 2000 &&
+             data.date is string &&
+             (!('matchId' in data) || data.matchId is string) &&
+             (!('abilityRating' in data) || (data.abilityRating is number && data.abilityRating >= 1 && data.abilityRating <= 5));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged();
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified();
+      allow delete: if isOwner(userId);
+    }
+
+    match /teams/{teamId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidTeam(request.resource.data) && request.resource.data.coachId == request.auth.uid;
+      allow update: if isAuthenticated() && isValidTeam(request.resource.data) && resource.data.coachId == request.auth.uid && request.resource.data.coachId == resource.data.coachId;
+      allow delete: if isAuthenticated() && resource.data.coachId == request.auth.uid;
+    }
+
+    match /players/{playerId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPlayer(request.resource.data) && 
+                    get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.coachId == request.auth.uid;
+      allow update: if isAuthenticated() && isValidPlayer(request.resource.data) && (
+        get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
+          request.resource.data.parentIds.hasAny([request.auth.uid])
+        )
+      );
+      allow delete: if isAuthenticated() && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid;
+    }
+
+    match /matches/{matchId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidMatch(request.resource.data);
+      allow update: if isAuthenticated() && isValidMatch(request.resource.data);
+      allow delete: if isAuthenticated() && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid;
+    }
+
+    match /availabilities/{availabilityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidAvailability(request.resource.data) && request.resource.data.parentId == request.auth.uid;
+      allow update: if isAuthenticated() && isValidAvailability(request.resource.data) && 
+                    request.resource.data.parentId == request.auth.uid &&
+                    (get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.parentIds.hasAny([request.auth.uid]) || 
+                     get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid);
+      allow delete: if isAuthenticated() && (resource.data.parentId == request.auth.uid || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid);
+    }
+
+    match /motmVotes/{voteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidMotmVote(request.resource.data) && request.resource.data.parentId == request.auth.uid;
+      allow update: if false;
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.parentId;
+    }
+
+    match /attendances/{attendanceId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidAttendance(request.resource.data) && 
+                    get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.coachId == request.auth.uid;
+      allow update: if isAuthenticated() && isValidAttendance(request.resource.data) && 
+                    get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid;
+      allow delete: if isAuthenticated() && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid;
+    }
+
+    match /playerNotes/{noteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPlayerNote(request.resource.data) && request.resource.data.coachId == request.auth.uid;
+      allow update: if isAuthenticated() && isValidPlayerNote(request.resource.data) && resource.data.coachId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.coachId == request.auth.uid;
+    }
+  }
+}

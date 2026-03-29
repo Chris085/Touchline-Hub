@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Touchline Hub</title>
+    <script>
+      // Fix for whatwg-fetch polyfill trying to overwrite window.fetch
+      if (typeof window !== 'undefined' && window.fetch) {
+        Object.defineProperty(window, 'fetch', {
+          value: window.fetch,
+          writable: true,
+          configurable: true
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
