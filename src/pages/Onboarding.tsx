@@ -35,7 +35,12 @@ export function Onboarding() {
     const code = searchParams.get('code');
     if (code) {
       setInviteCode(code);
-      setRole('parent');
+      if (code.startsWith('P-')) {
+        setRole('parent');
+      } else {
+        // For team codes, let them choose their role
+        setRole(null);
+      }
     }
   }, [searchParams]);
 
@@ -56,33 +61,52 @@ export function Onboarding() {
 
   const handleCoachSetup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!teamName) return;
+    if (!teamName && !inviteCode) return;
     setLoading(true);
     setError('');
 
     try {
-      // Generate a random 6-digit code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      const teamId = `team_${Date.now()}`;
-      
-      const teamRef = doc(db, 'teams', teamId);
-      await setDoc(teamRef, {
-        name: teamName,
-        code,
-        coachId: user?.uid
-      });
+      if (inviteCode) {
+        // Joining an existing team as a co-coach
+        const code = inviteCode.trim().toUpperCase();
+        const teamsRef = collection(db, 'teams');
+        const q = query(teamsRef, where('code', '==', code));
+        const querySnapshot = await getDocs(q);
 
-      // Show success screen instead of immediately redirecting
-      setCreatedTeam({ id: teamId, code });
+        if (querySnapshot.empty) {
+          setError('Invalid team code. Please check with your head coach.');
+          setLoading(false);
+          return;
+        }
+
+        const teamDoc = querySnapshot.docs[0];
+        await updateProfile({ role: 'coach', teamId: teamDoc.id });
+      } else {
+        // Creating a new team
+        // Generate a random 6-digit code
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const teamId = `team_${Date.now()}`;
+        
+        const teamRef = doc(db, 'teams', teamId);
+        await setDoc(teamRef, {
+          name: teamName,
+          code,
+          coachId: user?.uid,
+          matchDuration: 45
+        });
+
+        // Show success screen instead of immediately redirecting
+        setCreatedTeam({ id: teamId, code });
+      }
     } catch (err: any) {
       try {
         handleFirestoreError(err, OperationType.CREATE, 'teams');
       } catch (e: any) {
         try {
           const parsed = JSON.parse(e.message);
-          setError(parsed.error || 'Failed to create team');
+          setError(parsed.error || 'Failed to setup team');
         } catch {
-          setError(e.message || 'Failed to create team');
+          setError(e.message || 'Failed to setup team');
         }
       }
     } finally {
@@ -287,22 +311,57 @@ export function Onboarding() {
           </div>
         ) : role === 'coach' ? (
           <form onSubmit={handleCoachSetup} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Team Name</label>
-              <input
-                type="text"
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
-                placeholder="e.g. Astley & Buckshaw U10s"
-                required
-              />
+            <div className="space-y-4">
+              <div className="flex p-1 bg-slate-950 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setTeamName(''); setInviteCode(''); setError(''); }}
+                  className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${!inviteCode && teamName === '' ? 'bg-slate-800 text-white' : 'text-slate-500'}`}
+                >
+                  Create New
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTeamName(''); setInviteCode(' '); setError(''); }}
+                  className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${inviteCode ? 'bg-slate-800 text-white' : 'text-slate-500'}`}
+                >
+                  Join Existing
+                </button>
+              </div>
+
+              {!inviteCode ? (
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Team Name</label>
+                  <input
+                    type="text"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
+                    placeholder="e.g. Astley & Buckshaw U10s"
+                    required
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Team Code</label>
+                  <input
+                    type="text"
+                    value={inviteCode.trim()}
+                    onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all uppercase"
+                    placeholder="000000"
+                    maxLength={6}
+                    required
+                  />
+                  <p className="text-xs text-slate-500 mt-2 text-center">Enter the 6-digit team code provided by the head coach.</p>
+                </div>
+              )}
             </div>
-            {error && <div className="text-red-400 text-sm">{error}</div>}
+            {error && <div className="text-red-400 text-sm text-center">{error}</div>}
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => { setRole(null); setError(''); }}
+                onClick={() => { setRole(null); setError(''); setInviteCode(''); setTeamName(''); }}
                 className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg font-medium transition-colors"
               >
                 Back
@@ -312,7 +371,7 @@ export function Onboarding() {
                 disabled={loading}
                 className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-lg font-bold transition-colors disabled:opacity-50"
               >
-                {loading ? 'Creating...' : 'Create Team'}
+                {loading ? 'Processing...' : (inviteCode ? 'Join Team' : 'Create Team')}
               </button>
             </div>
           </form>

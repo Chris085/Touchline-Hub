@@ -62,7 +62,7 @@ export function MotmVoting() {
   const toggleVoting = async (matchId: string, currentStatus: boolean) => {
     try {
       await updateDoc(doc(db, 'matches', matchId), {
-        motmVotingOpen: !currentStatus
+        isPotmVotingOpen: !currentStatus
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${matchId}`);
@@ -118,7 +118,7 @@ export function MotmVoting() {
           {matches.map(match => (
             <div 
               key={match.id} 
-              onClick={() => (match.motmVotingOpen || profile?.role === 'coach') && setSelectedMatch(match)}
+              onClick={() => (match.isPotmVotingOpen || profile?.role === 'coach') && setSelectedMatch(match)}
               className={`flex items-center justify-between p-3 rounded-xl border transition-colors cursor-pointer ${
                 selectedMatch?.id === match.id 
                   ? 'bg-slate-800 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.1)]' 
@@ -139,7 +139,7 @@ export function MotmVoting() {
               </div>
               
               <div className="flex items-center gap-3">
-                {match.motmVotingOpen ? (
+                {match.isPotmVotingOpen ? (
                   <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-yellow-500/10 text-yellow-500 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
                     Open
@@ -152,18 +152,18 @@ export function MotmVoting() {
                 
                 {profile?.role === 'coach' && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); toggleVoting(match.id, !!match.motmVotingOpen); }}
+                    onClick={(e) => { e.stopPropagation(); toggleVoting(match.id, !!match.isPotmVotingOpen); }}
                     className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg transition-colors ${
-                      match.motmVotingOpen 
+                      match.isPotmVotingOpen 
                         ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' 
                         : 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
                     }`}
                   >
-                    {match.motmVotingOpen ? 'Close' : 'Start'}
+                    {match.isPotmVotingOpen ? 'Close' : 'Start'}
                   </button>
                 )}
                 
-                {profile?.role === 'parent' && match.motmVotingOpen && selectedMatch?.id !== match.id && (
+                {profile?.role === 'parent' && match.isPotmVotingOpen && selectedMatch?.id !== match.id && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setSelectedMatch(match); }}
                     className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg bg-yellow-500 text-slate-950 hover:bg-yellow-400 transition-colors"
@@ -187,7 +187,7 @@ export function MotmVoting() {
           
           <div className="flex justify-between items-start mb-8 relative z-10">
             <div>
-              {selectedMatch.motmVotingOpen ? (
+              {selectedMatch.isPotmVotingOpen ? (
                 <span className="text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md bg-yellow-500/10 text-yellow-500 mb-3 inline-block">
                   Voting Open
                 </span>
@@ -212,7 +212,7 @@ export function MotmVoting() {
               <h3 className="text-lg font-bold text-green-400 mb-1">Vote Cast Successfully</h3>
               <p className="text-slate-400 text-sm">Thank you for voting! Results will be visible to the coach.</p>
             </div>
-          ) : profile?.role === 'parent' && selectedMatch.motmVotingOpen ? (
+          ) : profile?.role === 'parent' && selectedMatch.isPotmVotingOpen ? (
             <div className="mb-6">
               <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Select a Player</h3>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -228,7 +228,7 @@ export function MotmVoting() {
                 ))}
               </div>
             </div>
-          ) : profile?.role === 'parent' && !selectedMatch.motmVotingOpen ? (
+          ) : profile?.role === 'parent' && !selectedMatch.isPotmVotingOpen ? (
              <div className="text-center py-8">
                <p className="text-slate-400">Voting is currently closed for this match.</p>
              </div>

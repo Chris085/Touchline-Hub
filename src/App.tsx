@@ -11,11 +11,14 @@ import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Onboarding } from './pages/Onboarding';
 import { Dashboard } from './pages/Dashboard';
-import { Roster } from './pages/Roster';
+import { Squad } from './pages/Squad';
 import { MatchController } from './pages/MatchController';
 import { MotmVoting } from './pages/MotmVoting';
 import { ScheduleDetails } from './pages/ScheduleDetails';
 import { PlayerProfile } from './pages/PlayerProfile';
+import { NewsFeed } from './pages/NewsFeed';
+import { TeamChat } from './pages/TeamChat';
+import { Notes } from './pages/Notes';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -59,11 +62,14 @@ function AppRoutes() {
       
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
+        <Route path="news" element={<NewsFeed />} />
+        <Route path="chat" element={<TeamChat />} />
         <Route path="schedule/:id" element={<ScheduleDetails />} />
         <Route path="player/:id" element={<PlayerProfile />} />
-        <Route path="roster" element={<Roster />} />
+        <Route path="squad" element={<Squad />} />
         <Route path="live" element={<MatchController />} />
         <Route path="motm" element={<MotmVoting />} />
+        <Route path="notes" element={<Notes />} />
       </Route>
     </Routes>
   );

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, where, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, Timestamp, serverTimestamp, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Play, Square, Goal, ArrowLeftRight, Clock, Activity, Trash2, AlertTriangle, UserMinus } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Play, Square, Goal, ArrowLeftRight, Clock, Activity, Trash2, AlertTriangle, UserMinus, ArrowLeft, Trophy, Star, Shield, Users, FileText, Tag, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface MatchEvent {
   id: string;
@@ -12,7 +12,11 @@ interface MatchEvent {
   playerName?: string;
   subPlayerId?: string;
   subPlayerName?: string;
+  assistPlayerId?: string;
+  assistPlayerName?: string;
+  description?: string;
   time: string;
+  isOwnGoal?: boolean;
 }
 
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -23,9 +27,13 @@ export function MatchController() {
   const [players, setPlayers] = useState<any[]>([]);
   const [activeMatch, setActiveMatch] = useState<any | null>(null);
   const [timer, setTimer] = useState(0); // in seconds
-  const [isRunning, setIsRunning] = useState(false);
+  const [team, setTeam] = useState<any>(null);
   const [showEventModal, setShowEventModal] = useState<'goal' | 'sub' | 'yellow' | 'red' | null>(null);
   const [subPlayerOff, setSubPlayerOff] = useState<any | null>(null);
+  const [goalScorer, setGoalScorer] = useState<any | null>(null);
+  const [goalDescription, setGoalDescription] = useState('');
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [matchNote, setMatchNote] = useState({ content: '', playerIds: [] as string[] });
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -44,9 +52,29 @@ export function MatchController() {
   const [preMatch, setPreMatch] = useState(false);
   const [availabilities, setAvailabilities] = useState<Record<string, any>>({});
   const [startingLineup, setStartingLineup] = useState<string[]>([]);
+  const [votes, setVotes] = useState<any[]>([]);
+  const [userVote, setUserVote] = useState<any | null>(null);
+  
+  const isCoach = profile?.role === 'coach';
+  const isParentOfAny = players.some(p => p.parentIds?.includes(profile?.uid));
   
   useEffect(() => {
-    if (profile?.role !== 'coach' || !profile?.teamId) return;
+    if (!profile?.teamId) return;
+    const fetchTeam = async () => {
+      try {
+        const teamDoc = await getDoc(doc(db, 'teams', profile.teamId!));
+        if (teamDoc.exists()) {
+          setTeam({ id: teamDoc.id, ...teamDoc.data() });
+        }
+      } catch (error) {
+        handleFirestoreError(error, OperationType.GET, `teams/${profile.teamId}`);
+      }
+    };
+    fetchTeam();
+  }, [profile?.teamId]);
+
+  useEffect(() => {
+    if (!profile?.teamId) return;
 
     const matchesRef = collection(db, 'matches');
     const qMatches = query(matchesRef, where('teamId', '==', profile.teamId), where('type', '==', 'match'));
@@ -57,7 +85,14 @@ export function MatchController() {
       setMatches(matchesData);
       
       setActiveMatch(prev => {
-        if (!prev) return null;
+        if (!prev) {
+          const inProgress = matchesData.find(m => m.status === 'in-progress');
+          if (inProgress) {
+            setPreMatch(false);
+            return inProgress;
+          }
+          return null;
+        }
         const updated = matchesData.find(m => m.id === prev.id);
         return updated || prev;
       });
@@ -74,7 +109,24 @@ export function MatchController() {
       unsubMatches();
       unsubPlayers();
     };
-  }, [profile?.role, profile?.teamId]);
+  }, [profile?.teamId]);
+
+  useEffect(() => {
+    if (!activeMatch?.id || !profile?.uid) return;
+    
+    const votesRef = collection(db, 'motmVotes');
+    const qVotes = query(votesRef, where('matchId', '==', activeMatch.id));
+    
+    const unsubVotes = onSnapshot(qVotes, (snapshot) => {
+      const votesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setVotes(votesData);
+      
+      const myVote = votesData.find((v: any) => v.parentId === profile.uid);
+      setUserVote(myVote || null);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'motmVotes'));
+    
+    return () => unsubVotes();
+  }, [activeMatch?.id, profile?.uid]);
 
   useEffect(() => {
     if (!activeMatch?.id) return;
@@ -92,31 +144,98 @@ export function MatchController() {
   }, [activeMatch?.id]);
 
   useEffect(() => {
-    if (isRunning) {
-      timerRef.current = setInterval(() => {
-        setTimer(prev => prev + 1);
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+    if (!activeMatch) return;
+    
+    const updateTimer = () => {
+      if (activeMatch.isTimerRunning && activeMatch.timerStartTime) {
+        const startTime = activeMatch.timerStartTime.toDate().getTime();
+        const now = Date.now();
+        const elapsed = Math.floor((now - startTime) / 1000);
+        setTimer((activeMatch.timerAccumulated || 0) + elapsed);
+      } else {
+        setTimer(activeMatch.timerAccumulated || 0);
+      }
     };
-  }, [isRunning]);
+
+    updateTimer();
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (activeMatch.isTimerRunning) {
+      interval = setInterval(updateTimer, 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [activeMatch?.isTimerRunning, activeMatch?.timerStartTime, activeMatch?.timerAccumulated]);
 
   const formatTime = (seconds: number) => {
+    const half = activeMatch?.currentHalf || 1;
+    const nominalHalfSeconds = (team?.halfDuration || 0) * 60;
+    
+    if (half === 1) {
+      if (seconds > nominalHalfSeconds) {
+        const addedSeconds = seconds - nominalHalfSeconds;
+        const am = Math.floor(addedSeconds / 60);
+        const as = addedSeconds % 60;
+        return `H1 ${team?.halfDuration || 0}:00 +${am}:${as.toString().padStart(2, '0')}`;
+      }
+    } else {
+      const nominalMatchSeconds = nominalHalfSeconds * 2;
+      if (seconds > nominalMatchSeconds) {
+        const addedSeconds = seconds - nominalMatchSeconds;
+        const am = Math.floor(addedSeconds / 60);
+        const as = addedSeconds % 60;
+        return `H2 ${team?.halfDuration * 2 || 0}:00 +${am}:${as.toString().padStart(2, '0')}`;
+      }
+    }
+
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `H${half} ${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const getTimerDisplay = (seconds: number) => {
+    const half = activeMatch?.currentHalf || 1;
+    const nominalHalfSeconds = (team?.halfDuration || 0) * 60;
+    
+    let nominalTime = '';
+    let addedTime = '';
+    
+    if (half === 1) {
+      if (seconds > nominalHalfSeconds) {
+        nominalTime = `${team?.halfDuration || 0}:00`;
+        const addedSeconds = seconds - nominalHalfSeconds;
+        const am = Math.floor(addedSeconds / 60);
+        const as = addedSeconds % 60;
+        addedTime = `+${am}:${as.toString().padStart(2, '0')}`;
+      } else {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        nominalTime = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      }
+    } else {
+      const nominalMatchSeconds = nominalHalfSeconds * 2;
+      if (seconds > nominalMatchSeconds) {
+        nominalTime = `${team?.halfDuration * 2 || 0}:00`;
+        const addedSeconds = seconds - nominalMatchSeconds;
+        const am = Math.floor(addedSeconds / 60);
+        const as = addedSeconds % 60;
+        addedTime = `+${am}:${as.toString().padStart(2, '0')}`;
+      } else {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        nominalTime = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      }
+    }
+    
+    return { nominalTime, addedTime };
   };
 
   const handleSelectMatch = (match: any) => {
     setActiveMatch(match);
     if (match.status === 'in-progress') {
       setPreMatch(false);
-      setIsRunning(true);
-      // We could try to restore timer here, but for now just start from 0 or saved time
-      setTimer(match.timer || 0);
     } else {
       setPreMatch(true);
       setStartingLineup(match.onPitch || []);
@@ -143,33 +262,87 @@ export function MatchController() {
         events: activeMatch.events || [],
         onPitch: startingLineup,
         onBench: bench,
-        timer: 0
+        timerAccumulated: 0,
+        isTimerRunning: true,
+        timerStartTime: serverTimestamp(),
+        currentHalf: 1
       });
       setPreMatch(false);
-      setTimer(0);
-      setIsRunning(true);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
     }
   };
 
-  const handleEndMatch = async () => {
+  const handleToggleTimer = async () => {
     if (!activeMatch) return;
+    
+    const isStarting = !activeMatch.isTimerRunning;
+    
+    try {
+      if (isStarting) {
+        await updateDoc(doc(db, 'matches', activeMatch.id), {
+          isTimerRunning: true,
+          timerStartTime: serverTimestamp()
+        });
+      } else {
+        const startTime = activeMatch.timerStartTime.toDate().getTime();
+        const now = Date.now();
+        const elapsed = Math.floor((now - startTime) / 1000);
+        const newAccumulated = (activeMatch.timerAccumulated || 0) + elapsed;
+        
+        await updateDoc(doc(db, 'matches', activeMatch.id), {
+          isTimerRunning: false,
+          timerStartTime: null,
+          timerAccumulated: newAccumulated
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
+    }
+  };
+
+  const handleEndHalf = async () => {
+    if (!activeMatch) return;
+    
+    const currentHalf = activeMatch.currentHalf || 1;
+    const isLastHalf = currentHalf === 2;
     
     setConfirmModal({
       isOpen: true,
-      title: 'End Match',
-      message: 'Are you sure you want to end this match? This will open MOTM voting.',
+      title: isLastHalf ? 'End Match' : 'End Half',
+      message: isLastHalf ? 'Are you sure you want to end the match?' : 'Are you sure you want to end the first half?',
       onConfirm: async () => {
         try {
-          await updateDoc(doc(db, 'matches', activeMatch.id), {
-            status: 'completed',
-            timer
-          });
-          setIsRunning(false);
-          setActiveMatch(null);
-          setTimer(0);
-          setPreMatch(false);
+          let updates: any = {
+            isTimerRunning: false,
+            timerStartTime: null
+          };
+          
+          let currentAccumulated = activeMatch.timerAccumulated || 0;
+          if (activeMatch.isTimerRunning && activeMatch.timerStartTime) {
+            const startTime = activeMatch.timerStartTime.toDate().getTime();
+            const now = Date.now();
+            const elapsed = Math.floor((now - startTime) / 1000);
+            currentAccumulated += elapsed;
+          }
+          
+          if (isLastHalf) {
+            updates.status = 'completed';
+            updates.timerAccumulated = currentAccumulated;
+            updates.half2Duration = currentAccumulated - ((team?.halfDuration || 0) * 60);
+          } else {
+            updates.currentHalf = 2;
+            updates.half1Duration = currentAccumulated;
+            // Second half starts from the nominal half duration
+            updates.timerAccumulated = (team?.halfDuration || 0) * 60;
+          }
+          
+          await updateDoc(doc(db, 'matches', activeMatch.id), updates);
+          if (isLastHalf) {
+            setActiveMatch(null);
+            setTimer(0);
+          }
+          closeConfirmModal();
         } catch (error) {
           handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
         }
@@ -177,7 +350,7 @@ export function MatchController() {
     });
   };
 
-  const handleAddEvent = async (player: any, subPlayer?: any) => {
+  const handleAddEvent = async (player: any, secondaryPlayer?: any) => {
     if (!activeMatch || !showEventModal) return;
 
     const eventTime = formatTime(timer);
@@ -189,9 +362,22 @@ export function MatchController() {
       time: eventTime
     };
 
-    if (showEventModal === 'sub' && subPlayer) {
-      newEvent.subPlayerId = subPlayer.id;
-      newEvent.subPlayerName = subPlayer.name;
+    if (showEventModal === 'sub' && secondaryPlayer) {
+      newEvent.subPlayerId = secondaryPlayer.id;
+      newEvent.subPlayerName = secondaryPlayer.name;
+    } else if (showEventModal === 'goal') {
+      if (player.id === 'own_goal') {
+        newEvent.playerName = 'Own Goal';
+        newEvent.isOwnGoal = true;
+      }
+      
+      if (secondaryPlayer) {
+        newEvent.assistPlayerId = secondaryPlayer.id;
+        newEvent.assistPlayerName = secondaryPlayer.name;
+      }
+      if (goalDescription.trim()) {
+        newEvent.description = goalDescription.trim();
+      }
     }
 
     try {
@@ -201,17 +387,19 @@ export function MatchController() {
 
       if (showEventModal === 'goal') {
         updates.scoreUs = (activeMatch.scoreUs || 0) + 1;
-      } else if (showEventModal === 'sub' && subPlayer) {
+      } else if (showEventModal === 'sub' && secondaryPlayer) {
         // Let's do it manually
         const currentPitch = activeMatch.onPitch || [];
         const currentBench = activeMatch.onBench || [];
-        updates.onPitch = currentPitch.filter((id: string) => id !== player.id).concat(subPlayer.id);
-        updates.onBench = currentBench.filter((id: string) => id !== subPlayer.id).concat(player.id);
+        updates.onPitch = currentPitch.filter((id: string) => id !== player.id).concat(secondaryPlayer.id);
+        updates.onBench = currentBench.filter((id: string) => id !== secondaryPlayer.id).concat(player.id);
       }
 
       await updateDoc(doc(db, 'matches', activeMatch.id), updates);
       setShowEventModal(null);
       setSubPlayerOff(null);
+      setGoalScorer(null);
+      setGoalDescription('');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
     }
@@ -236,8 +424,37 @@ export function MatchController() {
     }
   };
 
+  const handleSaveMatchNote = async () => {
+    if (!activeMatch || !matchNote.content.trim()) return;
+
+    try {
+      await addDoc(collection(db, 'notes'), {
+        teamId: activeMatch.teamId,
+        authorId: profile.uid,
+        content: matchNote.content.trim(),
+        type: 'match',
+        relatedId: activeMatch.id,
+        playerIds: matchNote.playerIds,
+        createdAt: serverTimestamp()
+      });
+      setMatchNote({ content: '', playerIds: [] });
+      setShowNoteModal(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'notes');
+    }
+  };
+
+  const toggleNotePlayerTag = (playerId: string) => {
+    setMatchNote(prev => ({
+      ...prev,
+      playerIds: prev.playerIds.includes(playerId)
+        ? prev.playerIds.filter(id => id !== playerId)
+        : [...prev.playerIds, playerId]
+    }));
+  };
+
   const handleRemoveEvent = async (event: MatchEvent) => {
-    if (!activeMatch) return;
+    if (!activeMatch || !isCoach) return;
     
     setConfirmModal({
       isOpen: true,
@@ -266,6 +483,7 @@ export function MatchController() {
           }
 
           await updateDoc(doc(db, 'matches', activeMatch.id), updates);
+          closeConfirmModal();
         } catch (error) {
           handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
         }
@@ -273,12 +491,58 @@ export function MatchController() {
     });
   };
 
-  if (profile?.role !== 'coach') {
+  const handleVotePotm = async (playerId: string) => {
+    if (!activeMatch || !profile?.uid) return;
+    
+    try {
+      if (userVote) {
+        // Change vote
+        await updateDoc(doc(db, 'motmVotes', userVote.id), {
+          playerId: playerId
+        });
+      } else {
+        // New vote
+        await addDoc(collection(db, 'motmVotes'), {
+          matchId: activeMatch.id,
+          playerId: playerId,
+          parentId: profile.uid
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'motmVotes');
+    }
+  };
+
+  const handleSetCoachPotm = async (player: any) => {
+    if (!activeMatch || !isCoach) return;
+    
+    try {
+      await updateDoc(doc(db, 'matches', activeMatch.id), {
+        coachPotmId: player.id,
+        coachPotmName: player.name
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
+    }
+  };
+
+  const handleTogglePotmVoting = async () => {
+    if (!activeMatch || !isCoach) return;
+    try {
+      await updateDoc(doc(db, 'matches', activeMatch.id), {
+        isPotmVotingOpen: !activeMatch.isPotmVotingOpen
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
+    }
+  };
+
+  if (profile?.role !== 'coach' && profile?.role !== 'parent') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
         <Activity size={48} className="text-slate-700 mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">Coach Access Only</h2>
-        <p className="text-slate-400">Only coaches can manage live matches.</p>
+        <h2 className="text-xl font-bold text-white mb-2">Access Restricted</h2>
+        <p className="text-slate-400">Please log in as a coach or parent to view matches.</p>
       </div>
     );
   }
@@ -336,6 +600,7 @@ export function MatchController() {
   if (activeMatch && !preMatch) {
     const onPitchPlayers = players.filter(p => (activeMatch.onPitch || []).includes(p.id));
     const onBenchPlayers = players.filter(p => (activeMatch.onBench || []).includes(p.id));
+    const { nominalTime, addedTime } = getTimerDisplay(timer);
 
     return (
       <div className="space-y-6 max-w-2xl mx-auto">
@@ -343,9 +608,20 @@ export function MatchController() {
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-blue-500" />
           
-          <div className="flex items-center justify-center gap-2 text-green-400 font-mono text-4xl font-bold tracking-wider mb-6">
-            <Clock size={32} className="animate-pulse" />
-            {formatTime(timer)}
+          <div className="flex flex-col items-center justify-center mb-6">
+            <div className="flex items-center justify-center gap-2 text-green-400 font-mono text-4xl font-bold tracking-wider">
+              <Clock size={32} className={activeMatch.isTimerRunning ? "animate-pulse" : ""} />
+              <span>{nominalTime}</span>
+              {addedTime && (
+                <div className="flex flex-col items-start">
+                  <span className="text-amber-500 text-2xl leading-none">{addedTime}</span>
+                  <span className="text-[10px] text-amber-500/60 uppercase tracking-tighter leading-none mt-1">Added Time</span>
+                </div>
+              )}
+            </div>
+            <div className="text-slate-500 text-xs uppercase tracking-widest mt-2 font-bold">
+              {activeMatch.currentHalf === 1 ? 'First Half' : 'Second Half'}
+            </div>
           </div>
 
           <div className="flex justify-between items-center px-4 mb-8">
@@ -361,58 +637,205 @@ export function MatchController() {
           </div>
 
           <div className="flex gap-4 justify-center">
-            <button
-              onClick={() => setIsRunning(!isRunning)}
-              className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${isRunning ? 'bg-yellow-500/20 text-yellow-500 hover:bg-yellow-500/30' : 'bg-green-500/20 text-green-500 hover:bg-green-500/30'}`}
-            >
-              {isRunning ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" />}
-            </button>
-            <button
-              onClick={handleEndMatch}
-              className="bg-red-500/20 text-red-500 hover:bg-red-500/30 px-6 rounded-full font-bold uppercase tracking-wider text-sm transition-colors"
-            >
-              End Match
-            </button>
+            {isCoach ? (
+              <>
+                <button
+                  onClick={handleToggleTimer}
+                  className={`flex-1 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 ${
+                    activeMatch.isTimerRunning ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30' : 'bg-green-500/20 text-green-500 hover:bg-green-500/30'
+                  }`}
+                >
+                  {activeMatch.isTimerRunning ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+                  {activeMatch.isTimerRunning ? 'PAUSE' : 'RESUME'}
+                </button>
+                <button
+                  onClick={handleEndHalf}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 border border-slate-700"
+                >
+                  <Clock size={20} />
+                  {activeMatch.currentHalf === 1 ? 'END HALF' : 'END MATCH'}
+                </button>
+              </>
+            ) : (
+              <div className="flex-1 py-4 rounded-xl font-bold flex items-center justify-center gap-2 bg-slate-800/50 text-slate-400 border border-slate-700/50 italic">
+                {activeMatch.isTimerRunning ? 'Match is Live' : 'Match is Paused'}
+              </div>
+            )}
           </div>
+
+          {team?.halfDuration && (
+            <div className="mt-6 w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+              <motion.div 
+                className="h-full bg-green-500"
+                initial={{ width: 0 }}
+                animate={{ 
+                  width: `${Math.min(100, (
+                    activeMatch.currentHalf === 1 
+                      ? (timer / (team.halfDuration * 60)) * 100
+                      : ((timer - (team.halfDuration * 60)) / (team.halfDuration * 60)) * 100
+                  ))}%` 
+                }}
+                transition={{ duration: 0.5 }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-2 gap-4">
-          <button
-            onClick={() => setShowEventModal('goal')}
-            className="bg-green-500 hover:bg-green-400 text-slate-950 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-green-500/20"
-          >
-            <Goal size={32} />
-            <span className="text-lg uppercase tracking-wider">Our Goal</span>
-          </button>
-          <button
-            onClick={handleOpponentGoal}
-            className="bg-slate-800 hover:bg-slate-700 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95"
-          >
-            <Goal size={32} className="text-slate-500" />
-            <span className="text-lg uppercase tracking-wider">Their Goal</span>
-          </button>
-          <button
-            onClick={() => setShowEventModal('sub')}
-            className="col-span-2 bg-blue-500 hover:bg-blue-400 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-blue-500/20"
-          >
-            <ArrowLeftRight size={32} />
-            <span className="text-lg uppercase tracking-wider">Substitution</span>
-          </button>
-          <button
-            onClick={() => setShowEventModal('yellow')}
-            className="bg-yellow-500 hover:bg-yellow-400 text-slate-950 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-yellow-500/20"
-          >
-            <AlertTriangle size={32} />
-            <span className="text-lg uppercase tracking-wider">Yellow Card</span>
-          </button>
-          <button
-            onClick={() => setShowEventModal('red')}
-            className="bg-red-500 hover:bg-red-400 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-red-500/20"
-          >
-            <UserMinus size={32} />
-            <span className="text-lg uppercase tracking-wider">Red Card</span>
-          </button>
+        {isCoach && (
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={() => setShowEventModal('goal')}
+              className="bg-green-500 hover:bg-green-400 text-slate-950 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-green-500/20"
+            >
+              <Goal size={32} />
+              <span className="text-lg uppercase tracking-wider">Our Goal</span>
+            </button>
+            <button
+              onClick={handleOpponentGoal}
+              className="bg-slate-800 hover:bg-slate-700 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95"
+            >
+              <Goal size={32} className="text-slate-500" />
+              <span className="text-lg uppercase tracking-wider">Their Goal</span>
+            </button>
+            <button
+              onClick={() => setShowEventModal('sub')}
+              className="col-span-2 bg-blue-500 hover:bg-blue-400 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-blue-500/20"
+            >
+              <ArrowLeftRight size={32} />
+              <span className="text-lg uppercase tracking-wider">Substitution</span>
+            </button>
+            <button
+              onClick={() => setShowEventModal('yellow')}
+              className="bg-yellow-500 hover:bg-yellow-400 text-slate-950 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-yellow-500/20"
+            >
+              <AlertTriangle size={32} />
+              <span className="text-lg uppercase tracking-wider">Yellow Card</span>
+            </button>
+            <button
+              onClick={() => setShowEventModal('red')}
+              className="bg-red-500 hover:bg-red-400 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-red-500/20"
+            >
+              <UserMinus size={32} />
+              <span className="text-lg uppercase tracking-wider">Red Card</span>
+            </button>
+            <button
+              onClick={() => setShowNoteModal(true)}
+              className="col-span-2 bg-slate-800 hover:bg-slate-700 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 border border-slate-700"
+            >
+              <FileText size={32} className="text-green-500" />
+              <span className="text-lg uppercase tracking-wider">Match Notes</span>
+            </button>
+          </div>
+        )}
+
+        {/* POTM Voting / Selection */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Shield className="text-yellow-500" size={20} />
+              <h3 className="text-lg font-bold text-white">Player of the Match</h3>
+            </div>
+            {isCoach && (
+              <button
+                onClick={handleTogglePotmVoting}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
+                  activeMatch.isPotmVotingOpen 
+                    ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                    : 'bg-slate-800 text-slate-400 border border-slate-700'
+                }`}
+              >
+                {activeMatch.isPotmVotingOpen ? 'VOTING OPEN' : 'OPEN VOTING'}
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            {/* Parents' POTM Voting */}
+            {(isParentOfAny || isCoach) && (
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Parents' Vote</h4>
+                  {!activeMatch.isPotmVotingOpen && !isCoach && (
+                    <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider bg-amber-500/10 px-2 py-0.5 rounded">
+                      Waiting for coach
+                    </span>
+                  )}
+                </div>
+                
+                {(activeMatch.isPotmVotingOpen || isCoach) ? (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {onPitchPlayers.map(player => (
+                        <button
+                          key={player.id}
+                          onClick={() => activeMatch.isPotmVotingOpen && handleVotePotm(player.id)}
+                          disabled={!activeMatch.isPotmVotingOpen && !isCoach}
+                          className={`p-3 rounded-xl text-sm font-medium transition-all border ${
+                            userVote?.playerId === player.id 
+                              ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400' 
+                              : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600'
+                          } ${(!activeMatch.isPotmVotingOpen && !isCoach) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          {player.name}
+                        </button>
+                      ))}
+                    </div>
+                    {userVote && (
+                      <p className="text-xs text-slate-500 mt-2 italic text-center">
+                        You voted for {players.find(p => p.id === userVote.playerId)?.name}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div className="bg-slate-950/50 border border-dashed border-slate-800 rounded-xl p-8 text-center">
+                    <p className="text-slate-500 text-sm italic">
+                      Voting hasn't been opened by the coach yet.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Coach's POTM Selection */}
+            {isCoach && (
+              <div className="pt-6 border-t border-slate-800">
+                <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-3">Coach's Selection</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {onPitchPlayers.map(player => (
+                    <button
+                      key={player.id}
+                      onClick={() => handleSetCoachPotm(player)}
+                      className={`p-3 rounded-xl text-sm font-medium transition-all border flex flex-col items-center gap-1 ${
+                        activeMatch.coachPotmId === player.id 
+                          ? 'bg-blue-500/20 border-blue-500 text-blue-400' 
+                          : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600'
+                      }`}
+                    >
+                      <span>{player.name}</span>
+                      {votes.filter(v => v.playerId === player.id).length > 0 && (
+                        <span className="text-[10px] opacity-60 flex items-center gap-1">
+                          <Users size={10} />
+                          {votes.filter(v => v.playerId === player.id).length}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {activeMatch.coachPotmId && (
+                  <p className="text-xs text-slate-500 mt-2 italic text-center">
+                    You selected {activeMatch.coachPotmName}
+                  </p>
+                )}
+              </div>
+            )}
+            
+            {(!isCoach && !isParentOfAny) && (
+              <p className="text-slate-500 text-sm italic text-center">
+                Only parents of players in this team can vote for POTM.
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Event Log */}
@@ -435,14 +858,21 @@ export function MatchController() {
                     
                     <span className="text-white font-medium">
                       {event.type === 'opponent_goal' ? 'Opponent Goal' : event.playerName}
+                      {event.isOwnGoal && (
+                        <span className="ml-2 px-1.5 py-0.5 bg-amber-500/20 text-amber-500 text-[10px] font-bold rounded border border-amber-500/30">
+                          OG
+                        </span>
+                      )}
                       {event.type === 'sub' && <span className="text-slate-400 font-normal"> OFF, {event.subPlayerName} ON</span>}
+                      {event.type === 'goal' && event.assistPlayerName && <span className="text-slate-400 font-normal text-xs ml-1">(Assist: {event.assistPlayerName})</span>}
+                      {event.description && <p className="text-slate-400 text-xs mt-1 italic">"{event.description}"</p>}
                     </span>
                   </div>
                   
                   <button 
-                    onClick={() => handleRemoveEvent(event)}
-                    className="text-slate-600 hover:text-red-400 transition-colors p-2"
-                    title="Remove Event"
+                    onClick={() => isCoach && handleRemoveEvent(event)}
+                    className={`transition-colors p-2 ${isCoach ? 'text-slate-500 hover:text-red-400' : 'opacity-0 cursor-default'}`}
+                    title={isCoach ? "Remove Event" : ""}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -461,15 +891,38 @@ export function MatchController() {
               className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl max-h-[80vh] flex flex-col"
             >
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-white uppercase tracking-wider">
-                  {showEventModal === 'sub' && !subPlayerOff ? 'Select Player Coming OFF' :
-                   showEventModal === 'sub' && subPlayerOff ? 'Select Player Coming ON' :
-                   `Select Player for ${showEventModal}`}
-                </h2>
-                <button onClick={() => { setShowEventModal(null); setSubPlayerOff(null); }} className="text-slate-500 hover:text-white">
+                <div className="flex items-center gap-3">
+                  {((showEventModal === 'sub' && subPlayerOff) || (showEventModal === 'goal' && goalScorer)) && (
+                    <button onClick={() => { setSubPlayerOff(null); setGoalScorer(null); }} className="text-slate-500 hover:text-white transition-colors">
+                      <ArrowLeft size={24} />
+                    </button>
+                  )}
+                  <h2 className="text-xl font-bold text-white uppercase tracking-wider">
+                    {showEventModal === 'sub' && !subPlayerOff ? 'Select Player Coming OFF' :
+                     showEventModal === 'sub' && subPlayerOff ? 'Select Player Coming ON' :
+                     showEventModal === 'goal' && !goalScorer ? 'Select Goal Scorer' :
+                     showEventModal === 'goal' && goalScorer ? 'Select Assist' :
+                     `Select Player for ${showEventModal}`}
+                  </h2>
+                </div>
+                <button onClick={() => { setShowEventModal(null); setSubPlayerOff(null); setGoalScorer(null); setGoalDescription(''); }} className="text-slate-500 hover:text-white">
                   <Square size={24} />
                 </button>
               </div>
+
+              {showEventModal === 'goal' && (
+                <div className="mb-4">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2 block">
+                    Goal/Assist Description (Optional)
+                  </label>
+                  <textarea
+                    value={goalDescription}
+                    onChange={(e) => setGoalDescription(e.target.value)}
+                    placeholder="E.g. Great header from a corner..."
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 resize-none h-20"
+                  />
+                </div>
+              )}
               
               <div className="overflow-y-auto flex-1 pr-2 space-y-2">
                 {showEventModal === 'sub' && subPlayerOff ? (
@@ -484,24 +937,56 @@ export function MatchController() {
                       <ArrowLeftRight size={18} className="text-blue-400" />
                     </button>
                   ))
+                ) : showEventModal === 'goal' && goalScorer ? (
+                  // Select assist (from pitch, excluding scorer)
+                  <>
+                    <button
+                      onClick={() => handleAddEvent(goalScorer)}
+                      className="w-full text-left bg-slate-800 hover:bg-slate-700 text-slate-400 p-4 rounded-xl font-medium transition-colors flex justify-between items-center mb-4"
+                    >
+                      No Assist
+                    </button>
+                    {onPitchPlayers.filter(p => p.id !== goalScorer.id).map(player => (
+                      <button
+                        key={player.id}
+                        onClick={() => handleAddEvent(goalScorer, player)}
+                        className="w-full text-left bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
+                      >
+                        {player.name}
+                      </button>
+                    ))}
+                  </>
                 ) : (
                   // Select player coming OFF or for other events (from pitch)
-                  onPitchPlayers.map(player => (
-                    <button
-                      key={player.id}
-                      onClick={() => {
-                        if (showEventModal === 'sub') {
-                          setSubPlayerOff(player);
-                        } else {
-                          handleAddEvent(player);
-                        }
-                      }}
-                      className="w-full text-left bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
-                    >
-                      {player.name}
-                      {showEventModal === 'sub' && <ArrowLeftRight size={18} className="text-slate-500" />}
-                    </button>
-                  ))
+                  <>
+                    {showEventModal === 'goal' && !goalScorer && (
+                      <button
+                        onClick={() => setGoalScorer({ id: 'own_goal', name: 'Own Goal' })}
+                        className="w-full text-left bg-slate-800 hover:bg-slate-700 text-amber-400 p-4 rounded-xl font-bold transition-colors flex justify-between items-center mb-4 border border-amber-500/30"
+                      >
+                        Own Goal (for Us)
+                        <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                      </button>
+                    )}
+                    {onPitchPlayers.map(player => (
+                      <button
+                        key={player.id}
+                        onClick={() => {
+                          if (showEventModal === 'sub') {
+                            setSubPlayerOff(player);
+                          } else if (showEventModal === 'goal') {
+                            setGoalScorer(player);
+                          } else {
+                            handleAddEvent(player);
+                          }
+                        }}
+                        className="w-full text-left bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
+                      >
+                        {player.name}
+                        {showEventModal === 'sub' && <ArrowLeftRight size={18} className="text-slate-500" />}
+                      </button>
+                    ))}
+                  </>
                 )}
                 
                 {((showEventModal === 'sub' && subPlayerOff && onBenchPlayers.length === 0) || 
@@ -521,6 +1006,74 @@ export function MatchController() {
           onConfirm={confirmModal.onConfirm}
           onCancel={closeConfirmModal}
         />
+
+        {/* Match Note Modal */}
+        <AnimatePresence>
+          {showNoteModal && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-6"
+              >
+                <div className="flex justify-between items-center">
+                  <h2 className="text-xl font-bold text-white">Match Notes</h2>
+                  <button onClick={() => setShowNoteModal(false)} className="text-slate-400 hover:text-white">
+                    <X size={24} />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Observations</label>
+                    <textarea
+                      value={matchNote.content}
+                      onChange={(e) => setMatchNote(prev => ({ ...prev, content: e.target.value }))}
+                      placeholder="Write your match notes here..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 min-h-[150px]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Tag Players</label>
+                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2">
+                      {players.map(player => (
+                        <button
+                          key={player.id}
+                          onClick={() => toggleNotePlayerTag(player.id)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all border ${
+                            matchNote.playerIds.includes(player.id)
+                              ? 'bg-green-500/20 border-green-500 text-green-400'
+                              : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+                          }`}
+                        >
+                          {player.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => setShowNoteModal(false)}
+                    className="flex-1 px-6 py-3 rounded-2xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveMatchNote}
+                    disabled={!matchNote.content.trim()}
+                    className="flex-1 px-6 py-3 rounded-2xl bg-green-500 text-slate-950 font-bold hover:bg-green-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Save Note
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }

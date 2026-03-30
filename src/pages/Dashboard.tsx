@@ -371,7 +371,7 @@ export function Dashboard() {
                               );
                             })}
                             {players.length === 0 && (
-                              <p className="text-[10px] text-yellow-400">Add a player in the Roster tab first.</p>
+                              <p className="text-[10px] text-yellow-400">Add a player in the Squad tab first.</p>
                             )}
                           </div>
                         ) : (

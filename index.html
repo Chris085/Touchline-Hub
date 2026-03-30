@@ -7,11 +7,15 @@
     <script>
       // Fix for whatwg-fetch polyfill trying to overwrite window.fetch
       if (typeof window !== 'undefined' && window.fetch) {
-        Object.defineProperty(window, 'fetch', {
-          value: window.fetch,
-          writable: true,
-          configurable: true
-        });
+        try {
+          Object.defineProperty(window, 'fetch', {
+            value: window.fetch,
+            writable: true,
+            configurable: true
+          });
+        } catch (e) {
+          console.warn('Could not make window.fetch writable:', e);
+        }
       }
     </script>
   </head>

@@ -22,6 +22,19 @@ service cloud.firestore {
     function isValidEmail(email) {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*"));
+    }
+    function isTeamMember(teamId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId == teamId;
+    }
+
+    function isCoach(teamId) {
+      return isTeamMember(teamId) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'coach';
+    }
 
     // ===============================================================
     // Domain Validators
@@ -40,7 +53,8 @@ service cloud.firestore {
       return hasRequiredFields(['name', 'code', 'coachId']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.code is string && data.code.size() == 6 &&
-             data.coachId is string;
+             data.coachId is string &&
+             (!('halfDuration' in data) || (data.halfDuration is number && data.halfDuration > 0 && data.halfDuration <= 60));
     }
 
     function isValidPlayer(data) {
@@ -49,7 +63,10 @@ service cloud.firestore {
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              (!('parentIds' in data) || (data.parentIds is list && data.parentIds.size() <= 3)) &&
              (!('inviteCode' in data) || (data.inviteCode is string && data.inviteCode.size() == 8)) &&
-             (!('motmAwards' in data) || (data.motmAwards is number && data.motmAwards >= 0));
+             (!('motmAwards' in data) || (data.motmAwards is number && data.motmAwards >= 0)) &&
+             (!('number' in data) || (data.number is string && data.number.size() <= 3)) &&
+             (!('position' in data) || (data.position is string && data.position.size() <= 10)) &&
+             (!('profileImageUrl' in data) || (data.profileImageUrl is string && isValidUrl(data.profileImageUrl)));
     }
 
     function isValidMatch(data) {
@@ -65,7 +82,18 @@ service cloud.firestore {
              (!('trainingNotes' in data) || (data.trainingNotes is string && data.trainingNotes.size() < 2000)) &&
              (!('scoreUs' in data) || data.scoreUs is number) &&
              (!('scoreThem' in data) || data.scoreThem is number) &&
-             (!('events' in data) || data.events is list);
+             (!('events' in data) || data.events is list) &&
+             (!('timerStartTime' in data) || data.timerStartTime == null || data.timerStartTime is timestamp) &&
+             (!('timerAccumulated' in data) || data.timerAccumulated is number) &&
+             (!('isTimerRunning' in data) || data.isTimerRunning is bool) &&
+             (!('currentHalf' in data) || data.currentHalf is number) &&
+             (!('half1Duration' in data) || data.half1Duration is number) &&
+             (!('half2Duration' in data) || data.half2Duration is number) &&
+             (!('onPitch' in data) || data.onPitch is list) &&
+             (!('onBench' in data) || data.onBench is list) &&
+             (!('coachPotmId' in data) || data.coachPotmId is string) &&
+             (!('coachPotmName' in data) || data.coachPotmName is string) &&
+             (!('isPotmVotingOpen' in data) || data.isPotmVotingOpen is bool);
     }
 
     function isValidAvailability(data) {
@@ -103,6 +131,55 @@ service cloud.firestore {
              (!('abilityRating' in data) || (data.abilityRating is number && data.abilityRating >= 1 && data.abilityRating <= 5));
     }
 
+    function isValidNewsPost(data) {
+      return hasRequiredFields(['teamId', 'authorId', 'authorName', 'content', 'createdAt']) &&
+             data.teamId is string &&
+             data.authorId is string &&
+             data.authorName is string &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
+             data.createdAt is string &&
+             (!('imageUrl' in data) || data.imageUrl is string) &&
+             (!('likesCount' in data) || data.likesCount is number) &&
+             (!('commentsCount' in data) || data.commentsCount is number);
+    }
+
+    function isValidNewsComment(data) {
+      return hasRequiredFields(['postId', 'teamId', 'authorId', 'authorName', 'content', 'createdAt']) &&
+             data.postId is string &&
+             data.teamId is string &&
+             data.authorId is string &&
+             data.authorName is string &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 1000 &&
+             data.createdAt is string;
+    }
+
+    function isValidNewsLike(data) {
+      return hasRequiredFields(['postId', 'userId', 'teamId']) &&
+             data.postId is string &&
+             data.userId is string &&
+             data.teamId is string;
+    }
+
+    function isValidChatMessage(data) {
+      return hasRequiredFields(['teamId', 'senderId', 'senderName', 'content', 'createdAt']) &&
+             data.teamId is string &&
+             data.senderId is string &&
+             data.senderName is string &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 2000 &&
+             data.createdAt is string;
+    }
+
+    function isValidNote(data) {
+      return hasRequiredFields(['teamId', 'authorId', 'content', 'type', 'createdAt']) &&
+             data.teamId is string &&
+             data.authorId is string &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
+             data.type in ['match', 'training', 'general'] &&
+             data.createdAt is string &&
+             (!('relatedId' in data) || data.relatedId is string) &&
+             (!('playerIds' in data) || data.playerIds is list);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -117,29 +194,28 @@ service cloud.firestore {
     match /teams/{teamId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidTeam(request.resource.data) && request.resource.data.coachId == request.auth.uid;
-      allow update: if isAuthenticated() && isValidTeam(request.resource.data) && resource.data.coachId == request.auth.uid && request.resource.data.coachId == resource.data.coachId;
+      allow update: if isAuthenticated() && isValidTeam(request.resource.data) && (resource.data.coachId == request.auth.uid || isCoach(teamId)) && request.resource.data.coachId == resource.data.coachId;
       allow delete: if isAuthenticated() && resource.data.coachId == request.auth.uid;
     }
 
     match /players/{playerId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidPlayer(request.resource.data) && 
-                    get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.coachId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidPlayer(request.resource.data) && isCoach(request.resource.data.teamId);
       allow update: if isAuthenticated() && isValidPlayer(request.resource.data) && (
-        get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid ||
+        isCoach(resource.data.teamId) ||
         (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
           request.resource.data.parentIds.hasAny([request.auth.uid])
         )
       );
-      allow delete: if isAuthenticated() && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid;
+      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
     }
 
     match /matches/{matchId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidMatch(request.resource.data);
-      allow update: if isAuthenticated() && isValidMatch(request.resource.data);
-      allow delete: if isAuthenticated() && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(request.resource.data.teamId);
+      allow update: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(resource.data.teamId);
+      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
     }
 
     match /availabilities/{availabilityId} {
@@ -148,8 +224,8 @@ service cloud.firestore {
       allow update: if isAuthenticated() && isValidAvailability(request.resource.data) && 
                     request.resource.data.parentId == request.auth.uid &&
                     (get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.parentIds.hasAny([request.auth.uid]) || 
-                     get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid);
-      allow delete: if isAuthenticated() && (resource.data.parentId == request.auth.uid || get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid);
+                     isCoach(resource.data.teamId));
+      allow delete: if isAuthenticated() && (resource.data.parentId == request.auth.uid || isCoach(resource.data.teamId));
     }
 
     match /motmVotes/{voteId} {
@@ -161,18 +237,50 @@ service cloud.firestore {
 
     match /attendances/{attendanceId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidAttendance(request.resource.data) && 
-                    get(/databases/$(database)/documents/teams/$(request.resource.data.teamId)).data.coachId == request.auth.uid;
-      allow update: if isAuthenticated() && isValidAttendance(request.resource.data) && 
-                    get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid;
-      allow delete: if isAuthenticated() && get(/databases/$(database)/documents/teams/$(resource.data.teamId)).data.coachId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidAttendance(request.resource.data) && isCoach(request.resource.data.teamId);
+      allow update: if isAuthenticated() && isValidAttendance(request.resource.data) && isCoach(resource.data.teamId);
+      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
     }
 
     match /playerNotes/{noteId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidPlayerNote(request.resource.data) && request.resource.data.coachId == request.auth.uid;
-      allow update: if isAuthenticated() && isValidPlayerNote(request.resource.data) && resource.data.coachId == request.auth.uid;
-      allow delete: if isAuthenticated() && resource.data.coachId == request.auth.uid;
+      allow read: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow create: if isAuthenticated() && isValidPlayerNote(request.resource.data) && isCoach(request.resource.data.teamId);
+      allow update: if isAuthenticated() && isValidPlayerNote(request.resource.data) && isCoach(resource.data.teamId);
+      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+    }
+
+    match /newsPosts/{postId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow create: if isCoach(request.resource.data.teamId) && isValidNewsPost(request.resource.data);
+      allow update: if isTeamMember(resource.data.teamId) && (
+        (isCoach(resource.data.teamId) && isValidNewsPost(request.resource.data)) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'commentsCount']))
+      );
+      allow delete: if isCoach(resource.data.teamId);
+    }
+
+    match /newsComments/{commentId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow create: if isTeamMember(request.resource.data.teamId) && isValidNewsComment(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+    }
+
+    match /newsLikes/{likeId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow create: if isTeamMember(request.resource.data.teamId) && isValidNewsLike(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /chatMessages/{messageId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow create: if isTeamMember(request.resource.data.teamId) && isValidChatMessage(request.resource.data) && request.resource.data.senderId == request.auth.uid;
+    }
+
+    match /notes/{noteId} {
+      allow read: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow create: if isAuthenticated() && isValidNote(request.resource.data) && isCoach(request.resource.data.teamId);
+      allow update: if isAuthenticated() && isValidNote(request.resource.data) && isCoach(resource.data.teamId);
+      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
     }
   }
 }

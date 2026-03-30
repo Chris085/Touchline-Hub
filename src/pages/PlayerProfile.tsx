@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { doc, collection, query, where, onSnapshot, addDoc, orderBy, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { format } from 'date-fns';
-import { ArrowLeft, User, Star, FileText, Activity, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
+import { ArrowLeft, User, Star, FileText, Activity, CheckCircle, AlertCircle, XCircle, Heart, Camera, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export function PlayerProfile() {
@@ -25,15 +25,20 @@ export function PlayerProfile() {
   const [editName, setEditName] = useState('');
   const [editNumber, setEditNumber] = useState('');
   const [editPosition, setEditPosition] = useState('');
+  const [editProfileImageUrl, setEditProfileImageUrl] = useState('');
   const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const isCoach = profile?.role === 'coach';
 
   useEffect(() => {
     if (player) {
-      setEditName(player.name || '');
-      setEditNumber(player.number || '');
-      setEditPosition(player.position || '');
+      setEditName(player?.name || '');
+      setEditNumber(player?.number || '');
+      setEditPosition(player?.position || '');
+      setEditProfileImageUrl(player?.profileImageUrl || '');
     }
   }, [player]);
 
@@ -44,12 +49,18 @@ export function PlayerProfile() {
     const playerRef = doc(db, 'players', id);
     const unsubPlayer = onSnapshot(playerRef, (docSnap) => {
       if (docSnap.exists()) {
-        setPlayer({ id: docSnap.id, ...docSnap.data() });
+        const data = docSnap.data();
+        if (data) {
+          setPlayer({ id: docSnap.id, ...data });
+        }
       } else {
         navigate('/');
       }
       setLoading(false);
-    }, (error) => handleFirestoreError(error, OperationType.GET, `players/${id}`));
+    }, (error) => {
+      setLoading(false);
+      handleFirestoreError(error, OperationType.GET, `players/${id}`);
+    });
 
     // Fetch notes
     const notesRef = collection(db, 'playerNotes');
@@ -107,13 +118,73 @@ export function PlayerProfile() {
       await updateDoc(doc(db, 'players', id), {
         name: editName.trim(),
         number: editNumber.trim(),
-        position: editPosition
+        position: editPosition,
+        profileImageUrl: editProfileImageUrl.trim()
       });
       setIsEditing(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `players/${id}`);
     } finally {
       setUpdatingProfile(false);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !id) return;
+
+    // Basic validation
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file.');
+      return;
+    }
+
+    setUploadingImage(true);
+    setUploadProgress(0);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          // Create a canvas to resize the image
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 300;
+          const MAX_HEIGHT = 300;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            // Convert to a compressed JPEG to keep size small
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            setEditProfileImageUrl(dataUrl);
+          }
+          setUploadingImage(false);
+          setUploadProgress(100);
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error processing image:', error);
+      alert('Failed to process image. Please try a different one.');
+      setUploadingImage(false);
     }
   };
 
@@ -125,7 +196,26 @@ export function PlayerProfile() {
     );
   }
 
-  if (!player) return null;
+  if (!player || !player.id) return null;
+
+  const isParent = player?.parentIds?.includes(profile?.uid);
+
+  const handleToggleParentStatus = async () => {
+    if (!id || !profile?.uid || !player) return;
+    
+    const currentParentIds = player?.parentIds || [];
+    const newParentIds = isParent 
+      ? currentParentIds.filter((uid: string) => uid !== profile.uid)
+      : [...currentParentIds, profile.uid];
+
+    try {
+      await updateDoc(doc(db, 'players', id), {
+        parentIds: newParentIds
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `players/${id}`);
+    }
+  };
 
   const presentCount = attendances.filter(a => a.status === 'present').length;
   const lateCount = attendances.filter(a => a.status === 'late').length;
@@ -150,8 +240,49 @@ export function PlayerProfile() {
       >
         <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full">
-            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center shrink-0">
-              <User size={32} className="text-slate-400" />
+            <div className="relative group">
+              <div className="w-24 h-24 bg-slate-800 rounded-full flex items-center justify-center shrink-0 overflow-hidden border-2 border-slate-700">
+                {uploadingImage ? (
+                  <div className="flex flex-col items-center gap-1">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+                    <span className="text-[10px] text-green-500 font-bold">{uploadProgress}%</span>
+                  </div>
+                ) : editProfileImageUrl ? (
+                  <img 
+                    src={editProfileImageUrl} 
+                    alt={player.name} 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : player.profileImageUrl ? (
+                  <img 
+                    src={player.profileImageUrl} 
+                    alt={player.name} 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <User size={48} className="text-slate-400" />
+                )}
+              </div>
+              {isEditing && (
+                <button 
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingImage}
+                  className="absolute inset-0 bg-black/50 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed z-10"
+                >
+                  <Camera size={24} className="text-white" />
+                  <span className="text-[10px] text-white font-bold mt-1">Change Photo</span>
+                </button>
+              )}
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImageUpload} 
+                accept="image/*" 
+                className="hidden" 
+              />
             </div>
             {isEditing ? (
               <div className="space-y-3 w-full max-w-md">
@@ -193,6 +324,25 @@ export function PlayerProfile() {
                     <option value="ST">Striker (ST)</option>
                   </select>
                 </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={editProfileImageUrl}
+                    onChange={(e) => setEditProfileImageUrl(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-10 py-3 text-white focus:outline-none focus:border-green-500"
+                    placeholder="Profile Image URL"
+                  />
+                  <Upload size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  {editProfileImageUrl && (
+                    <button 
+                      type="button"
+                      onClick={() => setEditProfileImageUrl('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-red-500"
+                    >
+                      <XCircle size={18} />
+                    </button>
+                  )}
+                </div>
                 <div className="flex gap-2 pt-1">
                   <button 
                     onClick={handleUpdateProfile} 
@@ -207,6 +357,7 @@ export function PlayerProfile() {
                       setEditName(player.name || '');
                       setEditNumber(player.number || '');
                       setEditPosition(player.position || '');
+                      setEditProfileImageUrl(player.profileImageUrl || '');
                     }} 
                     disabled={updatingProfile}
                     className="flex-1 sm:flex-none bg-slate-800 text-white px-4 py-3 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50"
@@ -226,12 +377,25 @@ export function PlayerProfile() {
             )}
           </div>
           {isCoach && !isEditing && (
-            <button 
-              onClick={() => setIsEditing(true)} 
-              className="text-slate-400 hover:text-white text-sm underline px-2 py-1 shrink-0 absolute top-6 right-6 sm:static sm:top-auto sm:right-auto"
-            >
-              Edit
-            </button>
+            <div className="flex items-center gap-3 absolute top-6 right-6 sm:static sm:top-auto sm:right-auto">
+              <button 
+                onClick={handleToggleParentStatus}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  isParent 
+                    ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20' 
+                    : 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20'
+                }`}
+              >
+                <Heart size={16} className={isParent ? 'fill-current' : ''} />
+                {isParent ? 'Remove as Parent' : 'I am the Parent'}
+              </button>
+              <button 
+                onClick={() => setIsEditing(true)} 
+                className="text-slate-400 hover:text-white text-sm underline px-2 py-1 shrink-0"
+              >
+                Edit
+              </button>
+            </div>
           )}
         </div>
       </motion.div>
