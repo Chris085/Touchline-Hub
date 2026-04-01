@@ -9,7 +9,7 @@ import {
   updateProfile as updateFirebaseAuthProfile,
   signOut as firebaseSignOut 
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 
 export type Role = 'coach' | 'parent' | 'player' | null;
@@ -21,6 +21,8 @@ export interface UserProfile {
   photoURL: string;
   role: Role;
   teamId?: string;
+  subscriptionStatus?: 'active' | 'inactive';
+  trialEndDate?: string;
 }
 
 interface AuthContextType {
@@ -48,14 +50,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    let unsubscribeProfile: (() => void) | null = null;
+    let unsubscribeTeam: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      
+      if (unsubscribeProfile) unsubscribeProfile();
+      if (unsubscribeTeam) unsubscribeTeam();
+
       if (currentUser) {
-        try {
-          const docRef = doc(db, 'users', currentUser.uid);
-          const docSnap = await getDoc(docRef);
+        const userRef = doc(db, 'users', currentUser.uid);
+        
+        unsubscribeProfile = onSnapshot(userRef, async (docSnap) => {
           if (docSnap.exists()) {
-            setProfile(docSnap.data() as UserProfile);
+            const userData = docSnap.data() as UserProfile;
+            
+            // If we have a teamId, listen to the team too for shared subscription
+            if (userData.teamId) {
+              if (unsubscribeTeam) unsubscribeTeam();
+              
+              const teamRef = doc(db, 'teams', userData.teamId);
+              unsubscribeTeam = onSnapshot(teamRef, (teamSnap) => {
+                let mergedProfile = { ...userData };
+                
+                if (teamSnap.exists()) {
+                  const teamData = teamSnap.data();
+                  
+                  // Merge team subscription info if it's better than user's
+                  if (teamData.subscriptionStatus === 'active') {
+                    mergedProfile.subscriptionStatus = 'active';
+                  }
+                  if (teamData.trialEndDate) {
+                    if (!mergedProfile.trialEndDate || new Date(teamData.trialEndDate) > new Date(mergedProfile.trialEndDate)) {
+                      mergedProfile.trialEndDate = teamData.trialEndDate;
+                    }
+                  }
+                }
+                
+                // Special check for admin email
+                if (mergedProfile.email === 'chrisjeal9@gmail.com') {
+                  mergedProfile.subscriptionStatus = 'active';
+                }
+                
+                setProfile(mergedProfile);
+                setLoading(false);
+              }, (err) => {
+                console.error("Error listening to team:", err);
+                setProfile(userData);
+                setLoading(false);
+              });
+            } else {
+              // No team, just use user data
+              let finalProfile = { ...userData };
+              if (finalProfile.email === 'chrisjeal9@gmail.com') {
+                finalProfile.subscriptionStatus = 'active';
+              }
+              setProfile(finalProfile);
+              setLoading(false);
+            }
           } else {
             // Create a basic profile if it doesn't exist
             const newProfile: UserProfile = {
@@ -63,33 +116,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               email: currentUser.email || '',
               displayName: currentUser.displayName || '',
               photoURL: currentUser.photoURL || '',
-              role: null, // Needs onboarding
+              role: null,
+              subscriptionStatus: currentUser.email === 'chrisjeal9@gmail.com' ? 'active' : 'inactive',
             };
             try {
-              await setDoc(docRef, newProfile);
-              setProfile(newProfile);
+              await setDoc(userRef, newProfile);
+              // Profile will be set by the onSnapshot listener
             } catch (createError) {
-              try {
-                handleFirestoreError(createError, OperationType.CREATE, `users/${currentUser.uid}`);
-              } catch (e) {
-                setError(e as Error);
-              }
+              handleFirestoreError(createError, OperationType.CREATE, `users/${currentUser.uid}`);
             }
           }
-        } catch (err) {
-          try {
-            handleFirestoreError(err, OperationType.GET, `users/${currentUser.uid}`);
-          } catch (e) {
-            setError(e as Error);
-          }
-        }
+        }, (err) => {
+          handleFirestoreError(err, OperationType.GET, `users/${currentUser.uid}`);
+          setLoading(false);
+        });
       } else {
         setProfile(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
+      if (unsubscribeTeam) unsubscribeTeam();
+    };
   }, []);
 
   const signInWithEmail = async (email: string, password: string) => {

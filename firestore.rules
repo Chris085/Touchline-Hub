@@ -36,6 +36,12 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'coach';
     }
 
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          ((request.auth.token.email == "chrisjeal9@gmail.com" || request.auth.token.email == "cjeal85@gmail.com") && request.auth.token.email_verified == true));
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
@@ -172,12 +178,32 @@ service cloud.firestore {
     function isValidNote(data) {
       return hasRequiredFields(['teamId', 'authorId', 'content', 'type', 'createdAt']) &&
              data.teamId is string &&
-             data.authorId is string &&
+             data.authorId == request.auth.uid &&
              data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
              data.type in ['match', 'training', 'general'] &&
-             data.createdAt is string &&
+             (data.createdAt is timestamp || data.createdAt == request.time) &&
              (!('relatedId' in data) || data.relatedId is string) &&
-             (!('playerIds' in data) || data.playerIds is list);
+             (!('playerIds' in data) || (data.playerIds is list && data.playerIds.size() <= 50));
+    }
+
+    function isValidCoachCode(data) {
+      return hasRequiredFields(['code', 'isUsed']) &&
+             data.code is string &&
+             data.isUsed is bool &&
+             (!('type' in data) || data.type in ['full', 'trial']) &&
+             (!('durationMonths' in data) || data.durationMonths == null || data.durationMonths is number) &&
+             (!('usedBy' in data) || data.usedBy is string) &&
+             (!('usedAt' in data) || data.usedAt is string);
+    }
+
+    function isValidSubscription(data) {
+      return hasRequiredFields(['userId', 'status']) &&
+             data.userId is string &&
+             data.status is string &&
+             (!('stripeCustomerId' in data) || data.stripeCustomerId is string) &&
+             (!('stripeSubscriptionId' in data) || data.stripeSubscriptionId is string) &&
+             (!('plan' in data) || data.plan is string) &&
+             (!('createdAt' in data) || data.createdAt is string);
     }
 
     // ===============================================================
@@ -192,95 +218,99 @@ service cloud.firestore {
     }
 
     match /teams/{teamId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidTeam(request.resource.data) && request.resource.data.coachId == request.auth.uid;
-      allow update: if isAuthenticated() && isValidTeam(request.resource.data) && (resource.data.coachId == request.auth.uid || isCoach(teamId)) && request.resource.data.coachId == resource.data.coachId;
-      allow delete: if isAuthenticated() && resource.data.coachId == request.auth.uid;
+      allow read: if isAuthenticated() && (isTeamMember(teamId) || isAdmin());
+      allow create: if isAuthenticated() && isValidTeam(request.resource.data);
+      allow update: if isAuthenticated() && (isCoach(teamId) || isAdmin()) && isValidTeam(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.coachId == request.auth.uid || isAdmin());
     }
 
     match /players/{playerId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidPlayer(request.resource.data) && isCoach(request.resource.data.teamId);
-      allow update: if isAuthenticated() && isValidPlayer(request.resource.data) && (
-        isCoach(resource.data.teamId) ||
-        (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parentIds']) &&
-          request.resource.data.parentIds.hasAny([request.auth.uid])
-        )
-      );
-      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && (isCoach(request.resource.data.teamId) || isAdmin()) && isValidPlayer(request.resource.data);
+      allow update: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin()) && isValidPlayer(request.resource.data);
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
     }
 
     match /matches/{matchId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(request.resource.data.teamId);
-      allow update: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(resource.data.teamId);
-      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && (isCoach(request.resource.data.teamId) || isAdmin()) && isValidMatch(request.resource.data);
+      allow update: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin()) && isValidMatch(request.resource.data);
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
     }
 
     match /availabilities/{availabilityId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidAvailability(request.resource.data) && request.resource.data.parentId == request.auth.uid;
-      allow update: if isAuthenticated() && isValidAvailability(request.resource.data) && 
-                    request.resource.data.parentId == request.auth.uid &&
-                    (get(/databases/$(database)/documents/players/$(resource.data.playerId)).data.parentIds.hasAny([request.auth.uid]) || 
-                     isCoach(resource.data.teamId));
-      allow delete: if isAuthenticated() && (resource.data.parentId == request.auth.uid || isCoach(resource.data.teamId));
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && (isTeamMember(request.resource.data.teamId) || isAdmin()) && isValidAvailability(request.resource.data);
+      allow update: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin()) && isValidAvailability(request.resource.data);
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
     }
 
     match /motmVotes/{voteId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidMotmVote(request.resource.data) && request.resource.data.parentId == request.auth.uid;
-      allow update: if false;
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.parentId;
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && isTeamMember(request.resource.data.teamId) && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     match /attendances/{attendanceId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidAttendance(request.resource.data) && isCoach(request.resource.data.teamId);
-      allow update: if isAuthenticated() && isValidAttendance(request.resource.data) && isCoach(resource.data.teamId);
-      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && (isCoach(request.resource.data.teamId) || isAdmin()) && isValidAttendance(request.resource.data);
+      allow update: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin()) && isValidAttendance(request.resource.data);
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
     }
 
     match /playerNotes/{noteId} {
-      allow read: if isAuthenticated() && isCoach(resource.data.teamId);
-      allow create: if isAuthenticated() && isValidPlayerNote(request.resource.data) && isCoach(request.resource.data.teamId);
-      allow update: if isAuthenticated() && isValidPlayerNote(request.resource.data) && isCoach(resource.data.teamId);
-      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow read: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && isValidPlayerNote(request.resource.data) && (isCoach(request.resource.data.teamId) || isAdmin());
+      allow update: if isAuthenticated() && isValidPlayerNote(request.resource.data) && (isCoach(resource.data.teamId) || isAdmin());
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
     }
 
     match /newsPosts/{postId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow create: if isCoach(request.resource.data.teamId) && isValidNewsPost(request.resource.data);
-      allow update: if isTeamMember(resource.data.teamId) && (
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && (isCoach(request.resource.data.teamId) || isAdmin()) && isValidNewsPost(request.resource.data);
+      allow update: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin()) && (
         (isCoach(resource.data.teamId) && isValidNewsPost(request.resource.data)) ||
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'commentsCount']))
       );
-      allow delete: if isCoach(resource.data.teamId);
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
     }
 
     match /newsComments/{commentId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow create: if isTeamMember(request.resource.data.teamId) && isValidNewsComment(request.resource.data);
-      allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && (isTeamMember(request.resource.data.teamId) || isAdmin()) && isValidNewsComment(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin());
     }
 
     match /newsLikes/{likeId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow create: if isTeamMember(request.resource.data.teamId) && isValidNewsLike(request.resource.data) && request.resource.data.userId == request.auth.uid;
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && (isTeamMember(request.resource.data.teamId) || isAdmin()) && isValidNewsLike(request.resource.data) && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
     match /chatMessages/{messageId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow create: if isTeamMember(request.resource.data.teamId) && isValidChatMessage(request.resource.data) && request.resource.data.senderId == request.auth.uid;
+      allow read: if isAuthenticated() && (isTeamMember(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && (isTeamMember(request.resource.data.teamId) || isAdmin()) && isValidChatMessage(request.resource.data) && request.resource.data.senderId == request.auth.uid;
     }
 
     match /notes/{noteId} {
-      allow read: if isAuthenticated() && isCoach(resource.data.teamId);
-      allow create: if isAuthenticated() && isValidNote(request.resource.data) && isCoach(request.resource.data.teamId);
-      allow update: if isAuthenticated() && isValidNote(request.resource.data) && isCoach(resource.data.teamId);
-      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow read: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && isValidNote(request.resource.data) && (isCoach(request.resource.data.teamId) || isAdmin());
+      allow update: if isAuthenticated() && isValidNote(request.resource.data) && (isCoach(resource.data.teamId) || isAdmin());
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
+    }
+
+    match /coachCodes/{codeId} {
+      allow read: if isAuthenticated() && isAdmin();
+      allow create: if isAuthenticated() && isAdmin() && isValidCoachCode(request.resource.data);
+      allow update: if isAuthenticated() && (isAdmin() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isUsed', 'usedBy', 'usedAt']))) && isValidCoachCode(request.resource.data);
+      allow delete: if isAuthenticated() && isAdmin();
+    }
+
+    match /subscriptions/{subId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAuthenticated() && (isOwner(request.resource.data.userId) || isAdmin()) && isValidSubscription(request.resource.data);
+      allow update: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin()) && isValidSubscription(request.resource.data);
+      allow delete: if isAuthenticated() && isAdmin();
     }
   }
 }

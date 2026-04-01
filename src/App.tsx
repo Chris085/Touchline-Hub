@@ -10,6 +10,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
 import { Onboarding } from './pages/Onboarding';
+import { Paywall } from './pages/Paywall';
+import { Admin } from './pages/Admin';
 import { Dashboard } from './pages/Dashboard';
 import { Squad } from './pages/Squad';
 import { MatchController } from './pages/MatchController';
@@ -19,6 +21,8 @@ import { PlayerProfile } from './pages/PlayerProfile';
 import { NewsFeed } from './pages/NewsFeed';
 import { TeamChat } from './pages/TeamChat';
 import { Notes } from './pages/Notes';
+import { Features } from './pages/Features';
+import { Stats } from './pages/Stats';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -55,10 +59,15 @@ function AppRoutes() {
     );
   }
 
+  const isSubscribed = profile?.subscriptionStatus === 'active' || 
+                      profile?.email === 'chrisjeal9@gmail.com' ||
+                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
+
   return (
     <Routes>
       <Route path="/login" element={user ? (profile?.role ? <Navigate to="/" replace /> : <Navigate to={`/onboarding${location.search}`} replace />) : <Login />} />
       <Route path="/onboarding" element={user && !profile?.role ? <Onboarding /> : user && profile?.role ? <Navigate to="/" replace /> : <Navigate to={`/login${location.search}`} replace />} />
+      <Route path="/upgrade" element={user && profile?.role ? (isSubscribed ? <Navigate to="/" replace /> : <Paywall />) : <Navigate to="/login" replace />} />
       
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
@@ -70,6 +79,9 @@ function AppRoutes() {
         <Route path="live" element={<MatchController />} />
         <Route path="motm" element={<MotmVoting />} />
         <Route path="notes" element={<Notes />} />
+        <Route path="stats" element={<Stats />} />
+        <Route path="features" element={<Features />} />
+        <Route path="admin" element={<Admin />} />
       </Route>
     </Routes>
   );

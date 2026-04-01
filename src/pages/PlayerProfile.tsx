@@ -64,7 +64,11 @@ export function PlayerProfile() {
 
     // Fetch notes
     const notesRef = collection(db, 'playerNotes');
-    const qNotes = query(notesRef, where('playerId', '==', id));
+    const qNotes = query(
+      notesRef, 
+      where('playerId', '==', id),
+      where('teamId', '==', profile.teamId)
+    );
     const unsubNotes = onSnapshot(qNotes, (snapshot) => {
       const notesData = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
       // Sort client-side to avoid needing a composite index immediately

@@ -24,25 +24,27 @@ export function ConfirmModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-[100] flex items-center justify-center p-4 font-sans">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl"
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-turf-surface/60 border border-chalk-white/10 rounded-[2rem] p-8 w-full max-w-sm shadow-2xl relative overflow-hidden"
       >
-        <div className="flex items-center gap-3 mb-4 text-red-400">
-          <div className="p-2 bg-red-500/10 rounded-xl">
-            <AlertTriangle size={24} />
+        <div className="absolute top-0 left-0 w-full h-1 bg-red-500/50" />
+        
+        <div className="flex flex-col items-center text-center mb-6">
+          <div className="p-4 bg-red-500/10 rounded-2xl mb-4 border border-red-500/20">
+            <AlertTriangle size={32} className="text-red-500" />
           </div>
-          <h2 className="text-xl font-bold text-white">{title}</h2>
+          <h2 className="text-2xl font-display italic uppercase font-black text-chalk-white tracking-tight">{title}</h2>
         </div>
         
-        <p className="text-slate-300 mb-6">{message}</p>
+        <p className="text-chalk-white/60 text-center mb-8 text-sm font-medium leading-relaxed">{message}</p>
         
         <div className="flex gap-3">
           <button
             onClick={onCancel}
-            className="flex-1 px-4 py-3 rounded-xl font-semibold text-white bg-slate-800 hover:bg-slate-700 transition-colors"
+            className="flex-1 px-4 py-4 rounded-xl font-display italic uppercase font-black text-chalk-white/60 bg-pitch-dark/50 hover:bg-pitch-dark transition-all border border-chalk-white/5 text-xs"
           >
             {cancelText}
           </button>
@@ -51,7 +53,7 @@ export function ConfirmModal({
               onConfirm();
               onCancel();
             }}
-            className="flex-1 px-4 py-3 rounded-xl font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors"
+            className="flex-1 px-4 py-4 rounded-xl font-display italic uppercase font-black text-white bg-red-500 hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 text-xs"
           >
             {confirmText}
           </button>

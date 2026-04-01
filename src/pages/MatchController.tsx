@@ -330,6 +330,7 @@ export function MatchController() {
             updates.status = 'completed';
             updates.timerAccumulated = currentAccumulated;
             updates.half2Duration = currentAccumulated - ((team?.halfDuration || 0) * 60);
+            updates.isPotmVotingOpen = false;
           } else {
             updates.currentHalf = 2;
             updates.half1Duration = currentAccumulated;

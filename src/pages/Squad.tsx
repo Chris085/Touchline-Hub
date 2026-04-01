@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { collection, query, where, onSnapshot, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate } from 'react-router-dom';
-import { Users, Plus, Trash2, Shield, Copy, Check, UserPlus, ChevronRight, Settings } from 'lucide-react';
+import { Users, Plus, Trash2, Shield, Copy, Check, UserPlus, ChevronRight, Settings, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface Player {
@@ -146,9 +146,13 @@ export function Squad() {
     }
   };
 
+  const isSubscribed = profile?.subscriptionStatus === 'active' || 
+                      profile?.email === 'chrisjeal9@gmail.com' ||
+                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
+
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile?.teamId || !newPlayerName.trim()) return;
+    if (!profile?.teamId || !newPlayerName.trim() || !isSubscribed) return;
 
     try {
       await addDoc(collection(db, 'players'), {
@@ -169,6 +173,7 @@ export function Squad() {
 
   const handleJoinPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSubscribed) return;
     const code = joinCode.trim().toUpperCase();
     if (!code || !code.startsWith('P-')) {
       setJoinError('Please enter a valid player invite code (e.g. P-XXXXXX)');
@@ -263,51 +268,63 @@ export function Squad() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+    <div className="space-y-8 font-sans">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-6">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-white">Team Squad</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-display italic uppercase font-black text-chalk-white tracking-tight">Team Squad</h1>
             {profile?.role === 'coach' && (
               <button 
                 onClick={() => setShowSettings(!showSettings)}
-                className={`p-1.5 rounded-lg transition-colors ${showSettings ? 'bg-blue-500 text-white' : 'text-slate-500 hover:text-white hover:bg-slate-800'}`}
+                className={`p-2 rounded-xl transition-all ${showSettings ? 'bg-pitch-green text-pitch-dark shadow-lg shadow-pitch-green/20' : 'text-chalk-white/40 hover:text-pitch-green hover:bg-pitch-dark/50'}`}
               >
-                <Settings size={20} />
+                <Settings size={22} />
               </button>
             )}
           </div>
-          <p className="text-slate-400 text-sm">{team?.name || 'Loading team...'}</p>
+          <p className="text-pitch-green font-bold uppercase tracking-widest text-[10px] mt-1">{team?.name || 'Loading team...'}</p>
         </div>
         
         <div className="flex gap-3">
           {profile?.role === 'coach' && team && (
             <button
               onClick={() => setShowTeamInviteModal(true)}
-              className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors border border-slate-700"
+              className="bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white px-5 py-3 rounded-xl font-bold flex items-center gap-3 transition-all border border-chalk-white/5 shadow-xl group"
             >
-              {copied ? <Check size={18} className="text-green-400" /> : <Copy size={18} />}
-              <span>Code: <span className="font-mono text-green-400 tracking-widest ml-1">{team.code}</span></span>
+              {copied ? <Check size={18} className="text-pitch-green" /> : <Copy size={18} className="text-chalk-white/40 group-hover:text-pitch-green transition-colors" />}
+              <span className="text-xs uppercase tracking-wider">Code: <span className="font-mono text-pitch-green tracking-widest ml-1">{team.code}</span></span>
             </button>
           )}
           
           {(profile?.role === 'coach') && (
             <button
-              onClick={() => setShowAddModal(true)}
-              className="bg-green-500 hover:bg-green-400 text-slate-950 px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors"
+              onClick={() => {
+                if (!isSubscribed) {
+                  navigate('/upgrade');
+                  return;
+                }
+                setShowAddModal(true);
+              }}
+              className={`${isSubscribed ? 'bg-pitch-green hover:bg-pitch-accent shadow-pitch-green/20' : 'bg-slate-700 hover:bg-slate-600 shadow-none'} text-pitch-dark px-6 py-3 rounded-xl font-display italic uppercase font-black flex items-center gap-2 transition-all shadow-lg`}
             >
-              <Plus size={20} />
-              <span className="hidden sm:inline">Add Player</span>
+              {isSubscribed ? <Plus size={20} strokeWidth={3} /> : <Zap size={18} className="text-chalk-white/60" />}
+              <span className="hidden sm:inline">{isSubscribed ? 'Add Player' : 'Upgrade to Add'}</span>
             </button>
           )}
           
           {(profile?.role === 'parent') && (
             <button
-              onClick={() => setShowJoinModal(true)}
-              className="bg-green-500 hover:bg-green-400 text-slate-950 px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors"
+              onClick={() => {
+                if (!isSubscribed) {
+                  navigate('/upgrade');
+                  return;
+                }
+                setShowJoinModal(true);
+              }}
+              className={`${isSubscribed ? 'bg-pitch-green hover:bg-pitch-accent shadow-pitch-green/20' : 'bg-slate-700 hover:bg-slate-600 shadow-none'} text-pitch-dark px-6 py-3 rounded-xl font-display italic uppercase font-black flex items-center gap-2 transition-all shadow-lg`}
             >
-              <Plus size={20} />
-              <span className="hidden sm:inline">Add Player</span>
+              {isSubscribed ? <Plus size={20} strokeWidth={3} /> : <Zap size={18} className="text-chalk-white/60" />}
+              <span className="hidden sm:inline">{isSubscribed ? 'Add Player' : 'Upgrade to Add'}</span>
             </button>
           )}
         </div>
@@ -317,12 +334,13 @@ export function Squad() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-6"
+          className="bg-turf-surface/40 backdrop-blur-xl border border-chalk-white/10 rounded-[2rem] p-8 mb-8 shadow-2xl relative overflow-hidden"
         >
-          <h2 className="text-lg font-bold text-white mb-4">Team Settings</h2>
-          <div className="grid gap-6 sm:grid-cols-2">
+          <div className="absolute top-0 left-0 w-1 h-full bg-pitch-green/50" />
+          <h2 className="text-xl font-display italic uppercase font-black text-chalk-white mb-6 tracking-tight">Team Settings</h2>
+          <div className="grid gap-8 sm:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2">Half Duration (minutes)</label>
+              <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-2 ml-1">Half Duration (minutes)</label>
               <div className="flex gap-3">
                 <input
                   type="number"
@@ -330,46 +348,50 @@ export function Squad() {
                   onChange={(e) => setHalfDuration(Number(e.target.value))}
                   min="1"
                   max="60"
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="flex-1 bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3 text-chalk-white focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all"
                 />
                 <button
                   onClick={handleSaveSettings}
                   disabled={isSavingSettings}
-                  className="bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white px-6 py-2 rounded-xl font-bold transition-colors"
+                  className="bg-pitch-green hover:bg-pitch-accent disabled:opacity-50 text-pitch-dark px-8 py-3 rounded-xl font-display italic uppercase font-black transition-all shadow-lg shadow-pitch-green/20"
                 >
                   {isSavingSettings ? 'Saving...' : 'Save'}
                 </button>
               </div>
-              <p className="text-xs text-slate-500 mt-2">This will be used as the default duration for each half in the match controller.</p>
+              <p className="text-[10px] font-bold text-chalk-white/20 mt-3 uppercase tracking-widest">This will be used as the default duration for each half in the match controller.</p>
             </div>
           </div>
         </motion.div>
       )}
 
       {players.length === 0 ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center">
-          <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Users size={32} className="text-slate-500" />
+        <div className="bg-turf-surface/20 border border-chalk-white/5 rounded-[2rem] p-16 text-center relative overflow-hidden">
+          <div className="absolute inset-0 bg-pitch-green/5 opacity-50" />
+          <div className="w-24 h-24 bg-pitch-dark/50 rounded-full flex items-center justify-center mx-auto mb-6 border border-chalk-white/10 relative z-10">
+            <Users size={40} className="text-chalk-white/20" />
           </div>
-          <h3 className="text-xl font-semibold text-white mb-2">No players yet</h3>
-          <p className="text-slate-400">
+          <h3 className="text-2xl font-display italic uppercase font-black text-chalk-white mb-3 relative z-10">No players yet</h3>
+          <p className="text-chalk-white/40 text-sm font-medium max-w-xs mx-auto relative z-10">
             {profile?.role === 'coach' 
               ? "Add players to your squad to generate invite codes for their parents." 
               : "Click 'Add Player' and enter an invite code from your coach."}
           </p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {players.map((player) => (
             <motion.div
               key={player.id}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between group cursor-pointer hover:border-slate-700 transition-colors"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              whileHover={{ y: -4 }}
+              className="bg-turf-surface/40 backdrop-blur-md border border-chalk-white/10 rounded-2xl p-5 flex items-center justify-between group cursor-pointer hover:border-pitch-green/50 transition-all shadow-xl relative overflow-hidden"
               onClick={() => navigate(`/player/${player.id}`)}
             >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold uppercase overflow-hidden border border-slate-700">
+              <div className="absolute top-0 left-0 w-1 h-full bg-pitch-green/20 group-hover:bg-pitch-green transition-colors" />
+              
+              <div className="flex items-center gap-4 relative z-10">
+                <div className="w-14 h-14 rounded-2xl bg-pitch-dark/50 flex items-center justify-center text-chalk-white font-black text-xl uppercase overflow-hidden border border-chalk-white/10 shadow-inner group-hover:border-pitch-green/30 transition-colors">
                   {player.profileImageUrl ? (
                     <img 
                       src={player.profileImageUrl} 
@@ -378,26 +400,26 @@ export function Squad() {
                       referrerPolicy="no-referrer"
                     />
                   ) : (
-                    player.name.charAt(0)
+                    <span className="font-display italic">{player.name.charAt(0)}</span>
                   )}
                 </div>
                 <div>
-                  <h4 className="text-white font-medium group-hover:text-green-400 transition-colors">{player.name}</h4>
-                  <div className="flex items-center gap-2 text-xs mt-0.5">
+                  <h4 className="text-chalk-white font-display italic uppercase font-black text-lg group-hover:text-pitch-green transition-colors leading-tight">{player.name}</h4>
+                  <div className="flex items-center gap-3 mt-1.5">
                     {player.position && (
-                      <span className="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-medium">
+                      <span className="bg-pitch-green/10 text-pitch-green px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border border-pitch-green/20">
                         {player.position}
                       </span>
                     )}
-                    <div className="flex items-center gap-1 text-yellow-500">
-                      <Shield size={12} />
-                      <span>{player.motmAwards} MOTM</span>
+                    <div className="flex items-center gap-1 text-pitch-accent">
+                      <Shield size={12} strokeWidth={3} />
+                      <span className="text-[10px] font-black uppercase tracking-wider">{player.motmAwards} MOTM</span>
                     </div>
                   </div>
                 </div>
               </div>
               
-              <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1 relative z-10 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all transform sm:translate-x-4 sm:group-hover:translate-x-0">
                 {profile?.role === 'coach' && (
                   <>
                     <button
@@ -405,7 +427,7 @@ export function Squad() {
                         e.stopPropagation();
                         handleInviteClick(player);
                       }}
-                      className="text-slate-400 hover:text-green-400 transition-colors p-2"
+                      className="text-chalk-white/40 hover:text-pitch-green transition-colors p-2 hover:bg-pitch-dark/50 rounded-lg"
                       title="Invite Parent"
                     >
                       <UserPlus size={18} />
@@ -415,7 +437,7 @@ export function Squad() {
                         e.stopPropagation();
                         handleToggleParentStatus(player);
                       }}
-                      className={`transition-colors p-2 ${player.parentIds?.includes(profile?.uid || '') ? 'text-green-500 hover:text-green-400' : 'text-slate-400 hover:text-green-400'}`}
+                      className={`transition-colors p-2 hover:bg-pitch-dark/50 rounded-lg ${player.parentIds?.includes(profile?.uid || '') ? 'text-pitch-green' : 'text-chalk-white/40 hover:text-pitch-green'}`}
                       title={player.parentIds?.includes(profile?.uid || '') ? "Unlink as Parent" : "Link as Parent"}
                     >
                       <Users size={18} />
@@ -428,13 +450,13 @@ export function Squad() {
                       e.stopPropagation();
                       handleDeletePlayer(player.id);
                     }}
-                    className="text-slate-500 hover:text-red-400 transition-colors p-2"
+                    className="text-chalk-white/20 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg"
                     title="Remove Player"
                   >
                     <Trash2 size={18} />
                   </button>
                 )}
-                <ChevronRight size={20} className="text-slate-600 sm:hidden group-hover:block ml-2" />
+                <ChevronRight size={20} className="text-chalk-white/20 sm:hidden group-hover:block ml-1" />
               </div>
             </motion.div>
           ))}
@@ -443,36 +465,38 @@ export function Squad() {
 
       {/* Team Invite Modal */}
       {showTeamInviteModal && team && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-turf-surface/60 border border-chalk-white/10 rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
           >
-            <h2 className="text-xl font-bold text-white mb-2">Invite Coach or Parent</h2>
-            <p className="text-slate-400 text-sm mb-6">
+            <div className="absolute top-0 left-0 w-full h-1 bg-pitch-green/50" />
+            <h2 className="text-2xl font-display italic uppercase font-black text-chalk-white mb-2 tracking-tight">Invite Coach or Parent</h2>
+            <p className="text-chalk-white/60 text-sm mb-8 font-medium">
               Share this team code with other coaches to help manage the team, or with parents to join the team.
             </p>
             
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 mb-6 text-center">
-              <span className="text-xs text-slate-500 uppercase tracking-wider block mb-2">Team Invite Code</span>
-              <span className="text-3xl font-mono font-bold text-green-400 tracking-[0.2em] ml-2">{team.code}</span>
+            <div className="bg-pitch-dark/50 border border-chalk-white/10 rounded-2xl p-8 mb-8 text-center relative overflow-hidden">
+              <div className="absolute inset-0 bg-pitch-green/5 opacity-50" />
+              <span className="text-[10px] font-bold text-chalk-white/30 uppercase tracking-widest block mb-3 relative z-10">Team Invite Code</span>
+              <span className="text-4xl font-mono font-black text-pitch-green tracking-[0.25em] relative z-10">{team.code}</span>
             </div>
 
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setShowTeamInviteModal(false)}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-medium transition-colors"
+                className="flex-1 bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white/60 py-4 rounded-xl font-display italic uppercase font-black transition-all border border-chalk-white/5 text-xs"
               >
                 Close
               </button>
               <button
                 type="button"
                 onClick={copyTeamInvite}
-                className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-pitch-green/20 text-xs"
               >
-                {copied ? <Check size={18} /> : <Copy size={18} />}
+                {copied ? <Check size={18} strokeWidth={3} /> : <Copy size={18} strokeWidth={3} />}
                 {copied ? 'Copied!' : 'Copy Invite'}
               </button>
             </div>
@@ -482,36 +506,38 @@ export function Squad() {
 
       {/* Invite Player Modal */}
       {invitePlayer && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-turf-surface/60 border border-chalk-white/10 rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
           >
-            <h2 className="text-xl font-bold text-white mb-2">Invite Parent/Player</h2>
-            <p className="text-slate-400 text-sm mb-6">
+            <div className="absolute top-0 left-0 w-full h-1 bg-pitch-green/50" />
+            <h2 className="text-2xl font-display italic uppercase font-black text-chalk-white mb-2 tracking-tight">Invite Parent/Player</h2>
+            <p className="text-chalk-white/60 text-sm mb-8 font-medium">
               Share this invite code with {invitePlayer.name}'s parents or the player themselves. Up to 3 people can manage this profile.
             </p>
             
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 mb-6 text-center">
-              <span className="text-xs text-slate-500 uppercase tracking-wider block mb-2">Player Invite Code</span>
-              <span className="text-3xl font-mono font-bold text-green-400 tracking-widest">{invitePlayer.inviteCode}</span>
+            <div className="bg-pitch-dark/50 border border-chalk-white/10 rounded-2xl p-8 mb-8 text-center relative overflow-hidden">
+              <div className="absolute inset-0 bg-pitch-green/5 opacity-50" />
+              <span className="text-[10px] font-bold text-chalk-white/30 uppercase tracking-widest block mb-3 relative z-10">Player Invite Code</span>
+              <span className="text-4xl font-mono font-black text-pitch-green tracking-widest relative z-10">{invitePlayer.inviteCode}</span>
             </div>
 
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setInvitePlayer(null)}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-medium transition-colors"
+                className="flex-1 bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white/60 py-4 rounded-xl font-display italic uppercase font-black transition-all border border-chalk-white/5 text-xs"
               >
                 Close
               </button>
               <button
                 type="button"
                 onClick={() => copyInviteLink(invitePlayer)}
-                className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-pitch-green/20 text-xs"
               >
-                {inviteCopied ? <Check size={18} /> : <Copy size={18} />}
+                {inviteCopied ? <Check size={18} strokeWidth={3} /> : <Copy size={18} strokeWidth={3} />}
                 {inviteCopied ? 'Copied!' : 'Copy Invite'}
               </button>
             </div>
@@ -521,21 +547,22 @@ export function Squad() {
 
       {/* Join Player Modal */}
       {showJoinModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-turf-surface/60 border border-chalk-white/10 rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
           >
-            <h2 className="text-xl font-bold text-white mb-4">Add Another Player</h2>
-            <form onSubmit={handleJoinPlayer} className="space-y-4">
+            <div className="absolute top-0 left-0 w-full h-1 bg-pitch-green/50" />
+            <h2 className="text-2xl font-display italic uppercase font-black text-chalk-white mb-6 tracking-tight">Add Another Player</h2>
+            <form onSubmit={handleJoinPlayer} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Player Invite Code</label>
+                <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">Player Invite Code</label>
                 <input
                   type="text"
                   value={joinCode}
                   onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest focus:outline-none focus:border-green-500 uppercase"
+                  className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-4 text-chalk-white text-center text-3xl font-mono font-black tracking-[0.2em] focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all uppercase placeholder:text-chalk-white/10"
                   placeholder="P-XXXXXX"
                   maxLength={8}
                   required
@@ -543,20 +570,20 @@ export function Squad() {
                 />
               </div>
               
-              {joinError && <div className="text-red-400 text-sm text-center">{joinError}</div>}
+              {joinError && <div className="text-red-400 text-[10px] font-bold uppercase tracking-widest text-center bg-red-500/10 p-3 rounded-lg border border-red-500/20">{joinError}</div>}
 
               <div className="flex gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => { setShowJoinModal(false); setJoinError(''); }}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg font-medium transition-colors"
+                  className="flex-1 bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white/60 py-4 rounded-xl font-display italic uppercase font-black transition-all border border-chalk-white/5 text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={joinLoading}
-                  className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-lg font-bold transition-colors disabled:opacity-50"
+                  className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all disabled:opacity-50 shadow-lg shadow-pitch-green/20 text-xs"
                 >
                   {joinLoading ? 'Adding...' : 'Add Player'}
                 </button>
@@ -568,21 +595,22 @@ export function Squad() {
 
       {/* Add Player Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl"
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-turf-surface/60 border border-chalk-white/10 rounded-[2rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
           >
-            <h2 className="text-xl font-bold text-white mb-4">Add Player</h2>
-            <form onSubmit={handleAddPlayer} className="space-y-4">
+            <div className="absolute top-0 left-0 w-full h-1 bg-pitch-green/50" />
+            <h2 className="text-2xl font-display italic uppercase font-black text-chalk-white mb-6 tracking-tight">Add Player</h2>
+            <form onSubmit={handleAddPlayer} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Player Name</label>
+                <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">Player Name</label>
                 <input
                   type="text"
                   value={newPlayerName}
                   onChange={(e) => setNewPlayerName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500"
+                  className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-4 text-chalk-white focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all placeholder:text-chalk-white/20"
                   placeholder="e.g. Marcus Rashford"
                   required
                   autoFocus
@@ -590,28 +618,28 @@ export function Squad() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Position</label>
+                <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">Position</label>
                 <select
                   value={newPlayerPosition}
                   onChange={(e) => setNewPlayerPosition(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500"
+                  className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-4 text-chalk-white focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all appearance-none"
                 >
-                  <option value="">Select Position (Optional)</option>
-                  <option value="GK">Goalkeeper (GK)</option>
-                  <option value="CB">Center Back (CB)</option>
-                  <option value="LB">Left Back (LB)</option>
-                  <option value="RB">Right Back (RB)</option>
-                  <option value="LWB">Left Wing Back (LWB)</option>
-                  <option value="RWB">Right Wing Back (RWB)</option>
-                  <option value="CDM">Defensive Midfielder (CDM)</option>
-                  <option value="CM">Central Midfielder (CM)</option>
-                  <option value="CAM">Attacking Midfielder (CAM)</option>
-                  <option value="LM">Left Midfielder (LM)</option>
-                  <option value="RM">Right Midfielder (RM)</option>
-                  <option value="LW">Left Winger (LW)</option>
-                  <option value="RW">Right Winger (RW)</option>
-                  <option value="CF">Center Forward (CF)</option>
-                  <option value="ST">Striker (ST)</option>
+                  <option value="" className="bg-pitch-dark">Select Position (Optional)</option>
+                  <option value="GK" className="bg-pitch-dark">Goalkeeper (GK)</option>
+                  <option value="CB" className="bg-pitch-dark">Center Back (CB)</option>
+                  <option value="LB" className="bg-pitch-dark">Left Back (LB)</option>
+                  <option value="RB" className="bg-pitch-dark">Right Back (RB)</option>
+                  <option value="LWB" className="bg-pitch-dark">Left Wing Back (LWB)</option>
+                  <option value="RWB" className="bg-pitch-dark">Right Wing Back (RWB)</option>
+                  <option value="CDM" className="bg-pitch-dark">Defensive Midfielder (CDM)</option>
+                  <option value="CM" className="bg-pitch-dark">Central Midfielder (CM)</option>
+                  <option value="CAM" className="bg-pitch-dark">Attacking Midfielder (CAM)</option>
+                  <option value="LM" className="bg-pitch-dark">Left Midfielder (LM)</option>
+                  <option value="RM" className="bg-pitch-dark">Right Midfielder (RM)</option>
+                  <option value="LW" className="bg-pitch-dark">Left Winger (LW)</option>
+                  <option value="RW" className="bg-pitch-dark">Right Winger (RW)</option>
+                  <option value="CF" className="bg-pitch-dark">Center Forward (CF)</option>
+                  <option value="ST" className="bg-pitch-dark">Striker (ST)</option>
                 </select>
               </div>
 
@@ -619,13 +647,13 @@ export function Squad() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg font-medium transition-colors"
+                  className="flex-1 bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white/60 py-4 rounded-xl font-display italic uppercase font-black transition-all border border-chalk-white/5 text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-lg font-bold transition-colors"
+                  className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all shadow-lg shadow-pitch-green/20 text-xs"
                 >
                   Add Player
                 </button>

@@ -15,7 +15,11 @@ import {
   Menu,
   X,
   Bell,
-  FileText
+  FileText,
+  LayoutGrid,
+  Zap,
+  Plus,
+  BarChart3
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ConfirmModal } from './ConfirmModal';
@@ -153,13 +157,18 @@ export function Layout() {
     pulse?: boolean;
     glow?: boolean;
     coachOnly?: boolean;
+    adminOnly?: boolean;
     hasBadge?: boolean;
+    hideIfActive?: boolean;
   }[] = [
     { name: 'Schedule', path: '/', icon: Calendar, alwaysShow: true },
+    { name: 'Features', path: '/features', icon: LayoutGrid },
     { name: 'News', path: '/news', icon: Newspaper, hasBadge: hasUnreadNews },
     { name: 'Chat', path: '/chat', icon: MessageSquare, hasBadge: hasUnreadChat },
     { name: 'Squad', path: '/squad', icon: Users },
+    { name: 'Stats', path: '/stats', icon: BarChart3 },
     { name: 'Notes', path: '/notes', icon: FileText, coachOnly: true },
+    { name: 'Admin', path: '/admin', icon: Shield, adminOnly: true },
     { 
       name: 'Live Match', 
       path: '/live', 
@@ -180,14 +189,39 @@ export function Layout() {
     },
   ];
 
+  const isSubscribed = profile?.subscriptionStatus === 'active' || 
+                      profile?.email === 'chrisjeal9@gmail.com' ||
+                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
+
+  const trialDaysLeft = profile?.trialEndDate 
+    ? Math.ceil((new Date(profile.trialEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+
+  const showTrialBanner = profile?.role === 'coach' && 
+                          profile?.subscriptionStatus !== 'active' && 
+                          profile?.email !== 'chrisjeal9@gmail.com' &&
+                          trialDaysLeft > 0;
+
   const bottomNavItems = navItems.filter(item => 
     item.alwaysShow || (item.dynamic && item.active && (!item.coachOnly || profile?.role === 'coach'))
   );
 
-  const burgerItems = navItems.filter(item => !item.alwaysShow);
+  const burgerItems = navItems.filter(item => 
+    !item.alwaysShow && 
+    (!item.coachOnly || profile?.role === 'coach') &&
+    (!item.adminOnly || profile?.email === 'chrisjeal9@gmail.com') &&
+    (!item.hideIfActive || !isSubscribed)
+  );
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 font-sans flex flex-col">
+      {/* Trial Banner */}
+      {showTrialBanner && (
+        <div className="bg-green-500 text-slate-950 py-1.5 px-4 text-center text-[10px] font-black uppercase tracking-[0.2em] relative z-40">
+          Trial Active: {trialDaysLeft} Days Remaining • <Link to="/upgrade" className="underline hover:text-white transition-colors">Upgrade Now</Link>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -212,6 +246,15 @@ export function Layout() {
             </div>
             
             <div className="flex items-center gap-4">
+              {profile?.email === 'chrisjeal9@gmail.com' && (
+                <Link 
+                  to="/admin" 
+                  className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 transition-all"
+                >
+                  <Shield size={14} />
+                  <span className="text-xs font-bold uppercase tracking-wider">Admin</span>
+                </Link>
+              )}
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/50 border border-slate-700/50">
                 {profile?.role === 'coach' ? (
                   <Shield size={14} className="text-green-400" />
@@ -298,21 +341,71 @@ export function Layout() {
                 </nav>
               </div>
 
-              <div className="p-4 border-t border-slate-800 space-y-1">
-                <button
-                  onClick={signOut}
-                  className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
-                >
-                  <LogOut size={20} />
-                  <span className="font-medium">Sign Out</span>
-                </button>
-                <button
-                  onClick={handleDeleteProfile}
-                  className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all"
-                >
-                  <UserX size={20} />
-                  <span className="font-medium">Reset Profile</span>
-                </button>
+              <div className="p-4 border-t border-slate-800 space-y-4">
+                {profile?.role === 'coach' && (
+                  <div className="px-4 py-4 bg-slate-800/50 rounded-2xl border border-slate-700/50">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Subscription</span>
+                      <Zap size={14} className={isSubscribed ? "text-green-400" : "text-slate-500"} />
+                    </div>
+                    
+                    {profile?.subscriptionStatus === 'active' || profile?.email === 'chrisjeal9@gmail.com' ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                        <p className="text-sm font-bold text-white">Premium Active</p>
+                      </div>
+                    ) : trialDaysLeft > 0 ? (
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-end">
+                          <p className="text-lg font-black text-white leading-none">{trialDaysLeft} Days</p>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Trial Remaining</p>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${Math.max(5, Math.min(100, (trialDaysLeft / 90) * 100))}%` }}
+                            className="h-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+                          />
+                        </div>
+                        <Link 
+                          to="/upgrade" 
+                          onClick={() => setIsMenuOpen(false)}
+                          className="flex items-center justify-center gap-2 w-full py-2.5 bg-green-500 hover:bg-green-400 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all active:scale-95"
+                        >
+                          Upgrade Now
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <p className="text-sm font-bold text-red-400">Trial Expired</p>
+                        <Link 
+                          to="/upgrade" 
+                          onClick={() => setIsMenuOpen(false)}
+                          className="flex items-center justify-center gap-2 w-full py-2.5 bg-green-500 hover:bg-green-400 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all active:scale-95"
+                        >
+                          Upgrade Now
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <button
+                    onClick={signOut}
+                    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
+                  >
+                    <LogOut size={20} />
+                    <span className="font-medium">Sign Out</span>
+                  </button>
+                  <button
+                    onClick={handleDeleteProfile}
+                    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-500 hover:bg-red-500/10 hover:text-red-400 transition-all"
+                  >
+                    <UserX size={20} />
+                    <span className="font-medium">Reset Profile</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           </>

@@ -10,9 +10,38 @@
         "displayName": { "type": "string" },
         "photoURL": { "type": "string" },
         "role": { "type": "string", "enum": ["coach", "parent", "player"] },
-        "teamId": { "type": "string", "description": "The ID of the team they belong to" }
+        "teamId": { "type": "string", "description": "The ID of the team they belong to" },
+        "subscriptionStatus": { "type": "string", "enum": ["active", "inactive"], "description": "Current subscription status" }
       },
       "required": ["uid", "email", "role"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "User subscription record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "status": { "type": "string" },
+        "stripeCustomerId": { "type": "string" },
+        "stripeSubscriptionId": { "type": "string" },
+        "plan": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "status"]
+    },
+    "CoachCode": {
+      "title": "Coach Code",
+      "description": "A code for free coach access",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "isUsed": { "type": "boolean" },
+        "type": { "type": "string", "enum": ["full", "trial"] },
+        "durationMonths": { "type": "integer", "description": "Duration of trial in months" },
+        "usedBy": { "type": "string" },
+        "usedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "isUsed"]
     },
     "Team": {
       "title": "Team",
@@ -264,6 +293,14 @@
     "notes/{noteId}": {
       "schema": "Note",
       "description": "Team, match, and training notes"
+    },
+    "subscriptions/{subscriptionId}": {
+      "schema": "Subscription",
+      "description": "Subscription records"
+    },
+    "coachCodes/{codeId}": {
+      "schema": "CoachCode",
+      "description": "Coach access codes"
     }
   }
 }

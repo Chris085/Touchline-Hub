@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth, UserProfile } from '../contexts/AuthContext';
 import { doc, setDoc, collection, query, where, getDocs, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { motion } from 'motion/react';
@@ -16,6 +16,9 @@ export function Onboarding() {
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [coachCode, setCoachCode] = useState('');
+  const [startTrial, setStartTrial] = useState(true);
   const [createdTeam, setCreatedTeam] = useState<{ id: string, code: string } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -66,6 +69,34 @@ export function Onboarding() {
     setError('');
 
     try {
+      let subscriptionUpdates: Partial<UserProfile> = {};
+
+      // Handle Coach Code if provided
+      if (coachCode.trim()) {
+        const response = await fetch('/api/validate-coach-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: coachCode.trim().toUpperCase(), userId: user?.uid }),
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          setError(data.error || 'Invalid or already used coach code.');
+          setLoading(false);
+          return;
+        }
+
+        // The API already updates the user profile and marks the code as used.
+        // We just need to make sure our local state is updated if we're going to use it.
+        subscriptionUpdates.subscriptionStatus = 'active';
+      } else if (startTrial) {
+        // Start standard 3-month trial
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 3);
+        subscriptionUpdates.trialEndDate = endDate.toISOString();
+        subscriptionUpdates.subscriptionStatus = 'inactive'; // Still inactive but has trial date
+      }
+
       if (inviteCode) {
         // Joining an existing team as a co-coach
         const code = inviteCode.trim().toUpperCase();
@@ -80,7 +111,7 @@ export function Onboarding() {
         }
 
         const teamDoc = querySnapshot.docs[0];
-        await updateProfile({ role: 'coach', teamId: teamDoc.id });
+        await updateProfile({ role: 'coach', teamId: teamDoc.id, ...subscriptionUpdates });
       } else {
         // Creating a new team
         // Generate a random 6-digit code
@@ -92,8 +123,13 @@ export function Onboarding() {
           name: teamName,
           code,
           coachId: user?.uid,
-          matchDuration: 45
+          matchDuration: 45,
+          ...subscriptionUpdates
         });
+
+        // Store subscription updates in state to apply later if needed, 
+        // but for now we apply them to the profile immediately
+        await updateProfile({ ...subscriptionUpdates });
 
         // Show success screen instead of immediately redirecting
         setCreatedTeam({ id: teamId, code });
@@ -202,40 +238,45 @@ export function Onboarding() {
 
   if (createdTeam) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative">
-        <div className="absolute top-4 right-4 flex items-center gap-4">
+      <div className="min-h-screen bg-pitch-dark flex flex-col items-center justify-center p-4 relative font-sans overflow-hidden">
+        {/* Background decorative elements */}
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-pitch-green/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-pitch-accent/10 rounded-full blur-3xl" />
+        
+        <div className="absolute top-4 right-4 flex items-center gap-4 z-20">
           <button
             onClick={handleDeleteProfile}
-            className="text-slate-400 hover:text-red-400 transition-colors flex items-center gap-2 text-sm"
+            className="text-chalk-white/40 hover:text-red-400 transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
             title="Reset Profile"
           >
-            <UserX size={16} />
+            <UserX size={14} />
             <span className="hidden sm:inline">Reset Profile</span>
           </button>
           <button
             onClick={signOut}
-            className="text-slate-400 hover:text-white transition-colors flex items-center gap-2 text-sm"
+            className="text-chalk-white/40 hover:text-pitch-green transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
             title="Sign Out"
           >
-            <LogOut size={16} />
+            <LogOut size={14} />
             <span className="hidden sm:inline">Sign Out</span>
           </button>
         </div>
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl text-center"
+          className="max-w-md w-full bg-turf-surface/40 backdrop-blur-xl p-8 rounded-[2rem] border border-chalk-white/10 shadow-2xl text-center relative z-10"
         >
-          <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          <div className="w-20 h-20 bg-pitch-green/20 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-pitch-green/30">
+            <svg className="w-10 h-10 text-pitch-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Team Created!</h2>
-          <p className="text-slate-400 mb-6">Share this 6-digit code with your players and parents so they can join your team.</p>
+          <h2 className="text-3xl font-display italic uppercase font-black text-chalk-white mb-2">Team Created!</h2>
+          <p className="text-chalk-white/60 text-sm mb-8">Share this 6-digit code with your players and parents so they can join your team.</p>
           
-          <div className="bg-slate-950 border border-slate-800 rounded-xl p-6 mb-8">
-            <div className="text-4xl font-mono font-bold text-green-400 tracking-[0.25em] ml-2">
+          <div className="bg-pitch-dark/50 border border-chalk-white/10 rounded-2xl p-8 mb-8 relative overflow-hidden">
+            <div className="absolute inset-0 bg-pitch-green/5 opacity-50" />
+            <div className="text-5xl font-mono font-black text-pitch-green tracking-[0.25em] relative z-10">
               {createdTeam.code}
             </div>
           </div>
@@ -243,7 +284,7 @@ export function Onboarding() {
           <button
             onClick={finishCoachSetup}
             disabled={loading}
-            className="w-full bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-lg font-bold transition-colors disabled:opacity-50"
+            className="w-full bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all disabled:opacity-50 shadow-lg shadow-pitch-green/20"
           >
             {loading ? 'Continuing...' : 'Continue to Dashboard'}
           </button>
@@ -253,22 +294,26 @@ export function Onboarding() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 relative">
-      <div className="absolute top-4 right-4 flex items-center gap-4">
+    <div className="min-h-screen bg-pitch-dark flex flex-col items-center justify-center p-4 relative font-sans overflow-hidden">
+      {/* Background decorative elements */}
+      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-pitch-green/10 rounded-full blur-3xl" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-pitch-accent/10 rounded-full blur-3xl" />
+      
+      <div className="absolute top-4 right-4 flex items-center gap-4 z-20">
         <button
           onClick={handleDeleteProfile}
-          className="text-slate-400 hover:text-red-400 transition-colors flex items-center gap-2 text-sm"
+          className="text-chalk-white/40 hover:text-red-400 transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
           title="Reset Profile"
         >
-          <UserX size={16} />
+          <UserX size={14} />
           <span className="hidden sm:inline">Reset Profile</span>
         </button>
         <button
           onClick={signOut}
-          className="text-slate-400 hover:text-white transition-colors flex items-center gap-2 text-sm"
+          className="text-chalk-white/40 hover:text-pitch-green transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
           title="Sign Out"
         >
-          <LogOut size={16} />
+          <LogOut size={14} />
           <span className="hidden sm:inline">Sign Out</span>
         </button>
       </div>
@@ -276,54 +321,62 @@ export function Onboarding() {
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl"
+        className="max-w-md w-full bg-turf-surface/40 backdrop-blur-xl p-8 rounded-[2rem] border border-chalk-white/10 shadow-2xl relative z-10"
       >
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-slate-950 font-bold text-2xl">TH</span>
+        <div className="text-center mb-10">
+          <div className="w-20 h-20 bg-gradient-to-br from-pitch-green to-pitch-accent rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-pitch-green/20 transform -rotate-6 border-2 border-chalk-white/20">
+            <span className="text-pitch-dark font-black text-4xl tracking-tighter font-display italic">TH</span>
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Welcome to The Touchline Hub</h1>
-          <p className="text-slate-400">Let's get you set up.</p>
+          <h1 className="text-3xl font-display italic uppercase font-black text-chalk-white mb-2 tracking-tight leading-tight">Welcome to<br/>The Touchline Hub</h1>
+          <p className="text-chalk-white/60 text-[10px] font-bold uppercase tracking-widest">Let's get you set up.</p>
         </div>
 
         {!role ? (
           <div className="space-y-4">
             <button
               onClick={() => setRole('coach')}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-colors flex items-center justify-between group"
+              className="w-full bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white p-5 rounded-2xl border border-chalk-white/5 transition-all flex items-center justify-between group"
             >
               <div className="text-left">
-                <div className="text-lg">I'm a Coach</div>
-                <div className="text-sm text-slate-400 font-normal">Create a new team and manage matches</div>
+                <div className="text-lg font-display italic uppercase font-black">I'm a Coach</div>
+                <div className="text-xs text-chalk-white/40 font-medium">Create a new team and manage matches</div>
               </div>
-              <div className="text-green-400 opacity-0 group-hover:opacity-100 transition-opacity">→</div>
+              <div className="text-pitch-green opacity-0 group-hover:opacity-100 transition-all transform translate-x-[-10px] group-hover:translate-x-0">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </div>
             </button>
             <button
               onClick={() => setRole('parent')}
-              className="w-full bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-colors flex items-center justify-between group"
+              className="w-full bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white p-5 rounded-2xl border border-chalk-white/5 transition-all flex items-center justify-between group"
             >
               <div className="text-left">
-                <div className="text-lg">I'm a Player / Parent</div>
-                <div className="text-sm text-slate-400 font-normal">Join an existing team with a code</div>
+                <div className="text-lg font-display italic uppercase font-black">I'm a Player / Parent</div>
+                <div className="text-xs text-chalk-white/40 font-medium">Join an existing team with a code</div>
               </div>
-              <div className="text-green-400 opacity-0 group-hover:opacity-100 transition-opacity">→</div>
+              <div className="text-pitch-green opacity-0 group-hover:opacity-100 transition-all transform translate-x-[-10px] group-hover:translate-x-0">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </div>
             </button>
           </div>
         ) : role === 'coach' ? (
-          <form onSubmit={handleCoachSetup} className="space-y-4">
-            <div className="space-y-4">
-              <div className="flex p-1 bg-slate-950 rounded-xl border border-slate-800">
+          <form onSubmit={handleCoachSetup} className="space-y-6">
+            <div className="space-y-5">
+              <div className="flex p-1 bg-pitch-dark/80 rounded-xl border border-chalk-white/10">
                 <button
                   type="button"
                   onClick={() => { setTeamName(''); setInviteCode(''); setError(''); }}
-                  className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${!inviteCode && teamName === '' ? 'bg-slate-800 text-white' : 'text-slate-500'}`}
+                  className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all font-display italic ${!inviteCode && teamName === '' ? 'bg-pitch-green text-pitch-dark shadow-md' : 'text-chalk-white/40'}`}
                 >
                   Create New
                 </button>
                 <button
                   type="button"
                   onClick={() => { setTeamName(''); setInviteCode(' '); setError(''); }}
-                  className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${inviteCode ? 'bg-slate-800 text-white' : 'text-slate-500'}`}
+                  className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all font-display italic ${inviteCode ? 'bg-pitch-green text-pitch-dark shadow-md' : 'text-chalk-white/40'}`}
                 >
                   Join Existing
                 </button>
@@ -331,78 +384,124 @@ export function Onboarding() {
 
               {!inviteCode ? (
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Team Name</label>
+                  <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">Team Name</label>
                   <input
                     type="text"
                     value={teamName}
                     onChange={(e) => setTeamName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all"
+                    className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all placeholder:text-chalk-white/20"
                     placeholder="e.g. Astley & Buckshaw U10s"
                     required
                   />
                 </div>
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Team Code</label>
+                  <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">Team Code</label>
                   <input
                     type="text"
                     value={inviteCode.trim()}
                     onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all uppercase"
+                    className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white text-center text-3xl font-mono font-black tracking-[0.2em] focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all uppercase placeholder:text-chalk-white/10"
                     placeholder="000000"
                     maxLength={6}
                     required
                   />
-                  <p className="text-xs text-slate-500 mt-2 text-center">Enter the 6-digit team code provided by the head coach.</p>
+                  <p className="text-[10px] font-bold text-chalk-white/20 mt-3 text-center uppercase tracking-widest">Enter the 6-digit team code provided by the head coach.</p>
+                </div>
+              )}
+
+              {!inviteCode && (
+                <div className="space-y-4 pt-2">
+                  <div className="bg-pitch-green/5 border border-pitch-green/20 rounded-xl p-4">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={startTrial}
+                        onChange={(e) => setStartTrial(e.target.checked)}
+                        className="w-5 h-5 rounded border-chalk-white/10 bg-pitch-dark/50 text-pitch-green focus:ring-pitch-green focus:ring-offset-pitch-dark"
+                      />
+                      <div className="flex-1">
+                        <div className="text-xs font-bold text-chalk-white uppercase tracking-wider">Start 3-Month Free Trial</div>
+                        <div className="text-[10px] text-chalk-white/40 font-medium">Full access to all features, no credit card required.</div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowCodeInput(!showCodeInput)}
+                      className="text-[10px] font-bold text-chalk-white/30 hover:text-pitch-green transition-colors uppercase tracking-widest"
+                    >
+                      {showCodeInput ? "I don't have a code" : "Have a promo code?"}
+                    </button>
+                  </div>
+
+                  {showCodeInput && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="space-y-2"
+                    >
+                      <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">Promo Code</label>
+                      <input
+                        type="text"
+                        value={coachCode}
+                        onChange={(e) => setCoachCode(e.target.value.toUpperCase())}
+                        className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3 text-chalk-white font-mono tracking-wider focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all placeholder:text-chalk-white/10"
+                        placeholder="ENTER CODE"
+                      />
+                    </motion.div>
+                  )}
                 </div>
               )}
             </div>
-            {error && <div className="text-red-400 text-sm text-center">{error}</div>}
+            {error && <div className="text-red-400 text-[10px] font-bold uppercase tracking-widest text-center bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</div>}
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => { setRole(null); setError(''); setInviteCode(''); setTeamName(''); }}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg font-medium transition-colors"
+                className="flex-1 bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white/60 py-4 rounded-xl font-display italic uppercase font-black transition-all border border-chalk-white/5"
               >
                 Back
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-lg font-bold transition-colors disabled:opacity-50"
+                className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all disabled:opacity-50 shadow-lg shadow-pitch-green/20"
               >
                 {loading ? 'Processing...' : (inviteCode ? 'Join Team' : 'Create Team')}
               </button>
             </div>
           </form>
         ) : (
-          <form onSubmit={handleParentSetup} className="space-y-4">
+          <form onSubmit={handleParentSetup} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Invite Code</label>
+              <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">Invite Code</label>
               <input
                 type="text"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500 transition-all uppercase"
+                className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white text-center text-2xl font-mono font-black tracking-[0.1em] focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all uppercase placeholder:text-chalk-white/10"
                 placeholder="P-XXXXXX or 000000"
                 maxLength={8}
                 required
               />
-              <p className="text-xs text-slate-500 mt-2 text-center">Enter your Player Invite Code or Team Code.</p>
+              <p className="text-[10px] font-bold text-chalk-white/20 mt-3 text-center uppercase tracking-widest">Enter your Player Invite Code or Team Code.</p>
             </div>
-            {error && <div className="text-red-400 text-sm text-center">{error}</div>}
+            {error && <div className="text-red-400 text-[10px] font-bold uppercase tracking-widest text-center bg-red-500/10 p-3 rounded-lg border border-red-500/20">{error}</div>}
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => { setRole(null); setError(''); }}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-lg font-medium transition-colors"
+                className="flex-1 bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white/60 py-4 rounded-xl font-display italic uppercase font-black transition-all border border-chalk-white/5"
               >
                 Back
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-green-500 hover:bg-green-400 text-slate-950 py-3 rounded-lg font-bold transition-colors disabled:opacity-50"
+                className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all disabled:opacity-50 shadow-lg shadow-pitch-green/20"
               >
                 {loading ? 'Joining...' : 'Join Team'}
               </button>

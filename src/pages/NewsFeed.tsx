@@ -27,7 +27,8 @@ import {
   MoreVertical,
   ChevronDown,
   ChevronUp,
-  User
+  User,
+  Zap
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ConfirmModal } from '../components/ConfirmModal';
@@ -110,9 +111,13 @@ export function NewsFeed() {
     };
   }, [profile?.teamId, profile?.uid]);
 
+  const isSubscribed = profile?.subscriptionStatus === 'active' || 
+                      profile?.email === 'chrisjeal9@gmail.com' ||
+                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
+
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile || !newPostContent.trim()) return;
+    if (!profile || !newPostContent.trim() || !isSubscribed) return;
 
     try {
       await addDoc(collection(db, 'newsPosts'), {
@@ -135,7 +140,7 @@ export function NewsFeed() {
   };
 
   const handleLike = async (postId: string) => {
-    if (!profile) return;
+    if (!profile || !isSubscribed) return;
 
     const isLiked = userLikes[postId];
     const likeId = `${profile.uid}_${postId}`;
@@ -192,7 +197,7 @@ export function NewsFeed() {
   };
 
   const handleAddComment = async (postId: string, content: string) => {
-    if (!profile || !content.trim()) return;
+    if (!profile || !content.trim() || !isSubscribed) return;
 
     try {
       await addDoc(collection(db, 'newsComments'), {
@@ -278,11 +283,17 @@ export function NewsFeed() {
         <h1 className="text-2xl font-bold text-white tracking-tight">Team Feed</h1>
         {profile?.role === 'coach' && (
           <button
-            onClick={() => setIsCreating(true)}
-            className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-slate-950 px-4 py-2 rounded-lg font-bold transition-colors shadow-lg shadow-green-500/20"
+            onClick={() => {
+              if (!isSubscribed) {
+                window.location.href = '/upgrade';
+                return;
+              }
+              setIsCreating(true);
+            }}
+            className={`flex items-center gap-2 ${isSubscribed ? 'bg-green-500 hover:bg-green-600 shadow-green-500/20' : 'bg-slate-700 hover:bg-slate-600 shadow-none'} text-slate-950 px-4 py-2 rounded-lg font-bold transition-colors shadow-lg`}
           >
-            <Plus size={20} />
-            <span>Post News</span>
+            {isSubscribed ? <Plus size={20} /> : <Zap size={16} />}
+            <span>{isSubscribed ? 'Post News' : 'Upgrade to Post'}</span>
           </button>
         )}
       </div>

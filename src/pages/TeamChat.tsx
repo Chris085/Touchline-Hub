@@ -83,9 +83,13 @@ export function TeamChat() {
     setShowScrollButton(!isAtBottom);
   };
 
+  const isSubscribed = profile?.subscriptionStatus === 'active' || 
+                      profile?.email === 'chrisjeal9@gmail.com' ||
+                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile || !newMessage.trim()) return;
+    if (!profile || !newMessage.trim() || !isSubscribed) return;
 
     const messageContent = newMessage.trim();
     setNewMessage('');
@@ -114,7 +118,26 @@ export function TeamChat() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto h-[calc(100vh-12rem)] flex flex-col bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+    <div className="max-w-4xl mx-auto h-[calc(100vh-12rem)] flex flex-col bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative">
+      {/* Trial Expired Overlay */}
+      {!isSubscribed && (
+        <div className="absolute inset-0 z-50 bg-slate-950/60 backdrop-blur-[2px] flex items-center justify-center p-6 text-center">
+          <div className="bg-slate-900 border border-slate-800 p-8 rounded-[2rem] shadow-2xl max-w-sm space-y-4">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto text-red-500">
+              <Shield size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-white">Trial Expired</h3>
+            <p className="text-slate-400 text-sm">Your trial has ended. Please upgrade to a paid plan to continue sending messages and adding new content.</p>
+            <button 
+              onClick={() => window.location.href = '/upgrade'}
+              className="w-full py-3 bg-green-500 hover:bg-green-400 text-slate-950 font-bold rounded-xl transition-all"
+            >
+              Upgrade Now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Chat Header */}
       <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md flex items-center justify-between">
         <div className="flex items-center gap-3">
