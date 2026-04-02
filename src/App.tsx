@@ -23,6 +23,7 @@ import { TeamChat } from './pages/TeamChat';
 import { Notes } from './pages/Notes';
 import { Features } from './pages/Features';
 import { Stats } from './pages/Stats';
+import { Profile } from './pages/Profile';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -81,6 +82,7 @@ function AppRoutes() {
         <Route path="notes" element={<Notes />} />
         <Route path="stats" element={<Stats />} />
         <Route path="features" element={<Features />} />
+        <Route path="profile" element={<Profile />} />
         <Route path="admin" element={<Admin />} />
       </Route>
     </Routes>

@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { collection, query, where, onSnapshot, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate } from 'react-router-dom';
-import { Users, Plus, Trash2, Shield, Copy, Check, UserPlus, ChevronRight, Settings, Zap } from 'lucide-react';
+import { Users, Plus, Trash2, Shield, Copy, Check, UserPlus, ChevronRight, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface Player {
@@ -19,9 +19,10 @@ interface Player {
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Squad() {
-  const { profile } = useAuth();
+  const { profile, isSubscribed } = useAuth();
   const navigate = useNavigate();
   const [players, setPlayers] = useState<Player[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [team, setTeam] = useState<any>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
@@ -33,9 +34,6 @@ export function Squad() {
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
-  const [halfDuration, setHalfDuration] = useState(20);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showTeamInviteModal, setShowTeamInviteModal] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -67,11 +65,16 @@ export function Squad() {
     };
     fetchTeam();
 
+    // Fetch team members (for parent names)
+    const membersRef = collection(db, 'users');
+    const qMembers = query(membersRef, where('teamId', '==', profile.teamId));
+    const unsubMembers = onSnapshot(qMembers, (snapshot) => {
+      setTeamMembers(snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })));
+    });
+
     // Fetch players
     const playersRef = collection(db, 'players');
-    const q = profile.role === 'coach'
-      ? query(playersRef, where('teamId', '==', profile.teamId))
-      : query(playersRef, where('parentIds', 'array-contains', profile.uid));
+    const q = query(playersRef, where('teamId', '==', profile.teamId));
     
     const unsub = onSnapshot(q, (snapshot) => {
       const playersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player));
@@ -80,30 +83,11 @@ export function Squad() {
       setPlayers(playersData);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'players'));
 
-    return () => unsub();
+    return () => {
+      unsub();
+      unsubMembers();
+    };
   }, [profile?.teamId, profile?.uid, profile?.role]);
-
-  useEffect(() => {
-    if (team?.halfDuration) {
-      setHalfDuration(team.halfDuration);
-    }
-  }, [team]);
-
-  const handleSaveSettings = async () => {
-    if (!profile?.teamId) return;
-    setIsSavingSettings(true);
-    try {
-      await updateDoc(doc(db, 'teams', profile.teamId), {
-        halfDuration: Number(halfDuration)
-      });
-      setTeam(prev => ({ ...prev, halfDuration: Number(halfDuration) }));
-      setShowSettings(false);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `teams/${profile.teamId}`);
-    } finally {
-      setIsSavingSettings(false);
-    }
-  };
 
   const generateInviteCode = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -145,10 +129,6 @@ export function Squad() {
       handleFirestoreError(error, OperationType.UPDATE, `players/${player.id}`);
     }
   };
-
-  const isSubscribed = profile?.subscriptionStatus === 'active' || 
-                      profile?.email === 'chrisjeal9@gmail.com' ||
-                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
 
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,20 +247,15 @@ export function Squad() {
     }
   };
 
+  const isCoach = profile?.role === 'coach';
+  const canViewProfile = (player: Player) => isCoach || player.parentIds?.includes(profile?.uid || '');
+
   return (
     <div className="space-y-8 font-sans">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-6">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-4xl font-display italic uppercase font-black text-chalk-white tracking-tight">Team Squad</h1>
-            {profile?.role === 'coach' && (
-              <button 
-                onClick={() => setShowSettings(!showSettings)}
-                className={`p-2 rounded-xl transition-all ${showSettings ? 'bg-pitch-green text-pitch-dark shadow-lg shadow-pitch-green/20' : 'text-chalk-white/40 hover:text-pitch-green hover:bg-pitch-dark/50'}`}
-              >
-                <Settings size={22} />
-              </button>
-            )}
           </div>
           <p className="text-pitch-green font-bold uppercase tracking-widest text-[10px] mt-1">{team?.name || 'Loading team...'}</p>
         </div>
@@ -330,40 +305,6 @@ export function Squad() {
         </div>
       </div>
 
-      {showSettings && profile?.role === 'coach' && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-turf-surface/40 backdrop-blur-xl border border-chalk-white/10 rounded-[2rem] p-8 mb-8 shadow-2xl relative overflow-hidden"
-        >
-          <div className="absolute top-0 left-0 w-1 h-full bg-pitch-green/50" />
-          <h2 className="text-xl font-display italic uppercase font-black text-chalk-white mb-6 tracking-tight">Team Settings</h2>
-          <div className="grid gap-8 sm:grid-cols-2">
-            <div>
-              <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-2 ml-1">Half Duration (minutes)</label>
-              <div className="flex gap-3">
-                <input
-                  type="number"
-                  value={halfDuration}
-                  onChange={(e) => setHalfDuration(Number(e.target.value))}
-                  min="1"
-                  max="60"
-                  className="flex-1 bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3 text-chalk-white focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all"
-                />
-                <button
-                  onClick={handleSaveSettings}
-                  disabled={isSavingSettings}
-                  className="bg-pitch-green hover:bg-pitch-accent disabled:opacity-50 text-pitch-dark px-8 py-3 rounded-xl font-display italic uppercase font-black transition-all shadow-lg shadow-pitch-green/20"
-                >
-                  {isSavingSettings ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-              <p className="text-[10px] font-bold text-chalk-white/20 mt-3 uppercase tracking-widest">This will be used as the default duration for each half in the match controller.</p>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
       {players.length === 0 ? (
         <div className="bg-turf-surface/20 border border-chalk-white/5 rounded-[2rem] p-16 text-center relative overflow-hidden">
           <div className="absolute inset-0 bg-pitch-green/5 opacity-50" />
@@ -384,9 +325,15 @@ export function Squad() {
               key={player.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              whileHover={{ y: -4 }}
-              className="bg-turf-surface/40 backdrop-blur-md border border-chalk-white/10 rounded-2xl p-5 flex items-center justify-between group cursor-pointer hover:border-pitch-green/50 transition-all shadow-xl relative overflow-hidden"
-              onClick={() => navigate(`/player/${player.id}`)}
+              whileHover={canViewProfile(player) ? { y: -4 } : {}}
+              className={`bg-turf-surface/40 backdrop-blur-md border border-chalk-white/10 rounded-2xl p-5 flex items-center justify-between group transition-all shadow-xl relative overflow-hidden ${
+                canViewProfile(player) ? 'cursor-pointer hover:border-pitch-green/50' : 'cursor-default opacity-60'
+              }`}
+              onClick={() => {
+                if (canViewProfile(player)) {
+                  navigate(`/player/${player.id}`);
+                }
+              }}
             >
               <div className="absolute top-0 left-0 w-1 h-full bg-pitch-green/20 group-hover:bg-pitch-green transition-colors" />
               
@@ -416,11 +363,24 @@ export function Squad() {
                       <span className="text-[10px] font-black uppercase tracking-wider">{player.motmAwards} MOTM</span>
                     </div>
                   </div>
+                  {isCoach && player.parentIds && player.parentIds.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {player.parentIds.map(pid => {
+                        const parent = teamMembers.find(m => m.uid === pid);
+                        if (!parent) return null;
+                        return (
+                          <span key={pid} className="text-[9px] text-chalk-white/40 font-bold uppercase tracking-widest bg-chalk-white/5 px-2 py-0.5 rounded border border-chalk-white/5">
+                            {parent.displayName || parent.email.split('@')[0]}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
               
               <div className="flex items-center gap-1 relative z-10 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all transform sm:translate-x-4 sm:group-hover:translate-x-0">
-                {profile?.role === 'coach' && (
+                {isCoach && (
                   <>
                     <button
                       onClick={(e) => {
@@ -442,21 +402,21 @@ export function Squad() {
                     >
                       <Users size={18} />
                     </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeletePlayer(player.id);
+                      }}
+                      className="text-chalk-white/20 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg"
+                      title="Remove Player"
+                    >
+                      <Trash2 size={18} />
+                    </button>
                   </>
                 )}
-                {(profile?.role === 'coach' || player.parentIds?.includes(profile?.uid || '')) && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeletePlayer(player.id);
-                    }}
-                    className="text-chalk-white/20 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg"
-                    title="Remove Player"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                {canViewProfile(player) && (
+                  <ChevronRight size={20} className="text-chalk-white/20 sm:hidden group-hover:block ml-1" />
                 )}
-                <ChevronRight size={20} className="text-chalk-white/20 sm:hidden group-hover:block ml-1" />
               </div>
             </motion.div>
           ))}

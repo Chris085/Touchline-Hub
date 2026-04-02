@@ -161,6 +161,33 @@ export function Stats() {
     const presentCount = attendances.filter(a => a.status === 'present').length;
     const attendanceRate = totalAttendanceRecords > 0 ? Math.round((presentCount / totalAttendanceRecords) * 100) : 0;
 
+    // Season MOTM Awards
+    const seasonAwards = completedMatches.map(m => {
+      // Parent's POTM calculation
+      const matchVotes = votes.filter(v => v.matchId === m.id);
+      const voteCounts: Record<string, number> = {};
+      matchVotes.forEach(v => {
+        voteCounts[v.playerId] = (voteCounts[v.playerId] || 0) + 1;
+      });
+      
+      let parentPotmId = null;
+      let maxVotes = 0;
+      Object.entries(voteCounts).forEach(([id, count]) => {
+        if (count > maxVotes) {
+          maxVotes = count;
+          parentPotmId = id;
+        }
+      });
+
+      return {
+        matchId: m.id,
+        opponent: m.opponent,
+        date: m.date,
+        coachPotm: m.coachPotmName || 'Not Selected',
+        parentPotm: parentPotmId ? players.find(p => p.id === parentPotmId)?.name : 'No Votes'
+      };
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
     return {
       totalMatches,
       wins,
@@ -176,7 +203,8 @@ export function Stats() {
       topAssists,
       topPotm,
       attendanceRate,
-      totalTraining
+      totalTraining,
+      seasonAwards
     };
   }, [matches, players, votes, attendances]);
 
@@ -334,6 +362,47 @@ export function Stats() {
           ))}
           {stats.trendData.length === 0 && (
             <p className="text-slate-500 text-sm italic">No completed matches yet.</p>
+          )}
+        </div>
+      </motion.div>
+
+      {/* Season MOTM Awards */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-slate-900/50 border border-slate-800 rounded-[2rem] p-8"
+      >
+        <h2 className="text-xl font-black text-white uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
+          <Award size={24} className="text-yellow-500" />
+          Season MOTM Awards
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {stats.seasonAwards.map((award, i) => (
+            <div key={i} className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 flex flex-col gap-4 group hover:border-yellow-500/50 transition-all">
+              <div className="flex justify-between items-start">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{format(new Date(award.date), 'MMM d, yyyy')}</span>
+                  <span className="text-sm font-black text-white uppercase italic font-display">vs {award.opponent}</span>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-yellow-500/10 flex items-center justify-center text-yellow-500">
+                  <Award size={16} />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Coach's Player</span>
+                  <span className="text-xs font-black text-white uppercase italic font-display truncate">{award.coachPotm}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Parent's Player</span>
+                  <span className="text-xs font-black text-white uppercase italic font-display truncate">{award.parentPotm}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+          {stats.seasonAwards.length === 0 && (
+            <p className="text-slate-500 text-sm italic col-span-full text-center py-8">No MOTM awards recorded yet.</p>
           )}
         </div>
       </motion.div>

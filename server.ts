@@ -22,7 +22,7 @@ const initializeDb = async () => {
       const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
       if (!admin.apps.length) {
         admin.initializeApp({
-          projectId: firebaseConfig.projectId,
+          credential: admin.credential.applicationDefault(),
         });
       }
       // Use getFirestore from firebase-admin/firestore to specify databaseId if needed
@@ -63,6 +63,7 @@ async function startServer() {
         try {
           await db.collection("users").doc(userId).update({
             subscriptionStatus: "active",
+            stripeCustomerId: session.customer as string,
           });
 
           // Update team subscription status as well
@@ -85,6 +86,37 @@ async function startServer() {
           console.log(`Subscription activated for user: ${userId}`);
         } catch (dbError) {
           console.error("Error updating subscription in Firestore:", dbError);
+        }
+      }
+    }
+
+    if (event.type === "customer.subscription.deleted" || event.type === "customer.subscription.updated") {
+      const subscription = event.data.object as Stripe.Subscription;
+      const status = subscription.status === "active" ? "active" : "inactive";
+      
+      if (db) {
+        try {
+          // Find the user with this stripe customer ID
+          const usersSnapshot = await db.collection("users").where("stripeCustomerId", "==", subscription.customer).get();
+          
+          if (!usersSnapshot.empty) {
+            const userDoc = usersSnapshot.docs[0];
+            const userId = userDoc.id;
+            const userData = userDoc.data();
+
+            await db.collection("users").doc(userId).update({
+              subscriptionStatus: status,
+            });
+
+            if (userData?.teamId) {
+              await db.collection("teams").doc(userData.teamId).update({
+                subscriptionStatus: status,
+              });
+            }
+            console.log(`Subscription ${status} for user: ${userId}`);
+          }
+        } catch (dbError) {
+          console.error("Error updating subscription status in Firestore:", dbError);
         }
       }
     }
@@ -130,6 +162,32 @@ async function startServer() {
     }
   });
 
+  // Create Stripe Customer Portal Session
+  app.post("/api/create-portal-session", async (req, res) => {
+    const { userId } = req.body;
+    if (!db) return res.status(500).json({ error: "Database not initialized" });
+    
+    try {
+      const userDoc = await db.collection("users").doc(userId).get();
+      const userData = userDoc.data();
+      
+      if (!userData?.stripeCustomerId) {
+        return res.status(400).json({ error: "No active subscription found for this user" });
+      }
+
+      const appUrl = process.env.APP_URL || "http://localhost:3000";
+      const session = await stripe.billingPortal.sessions.create({
+        customer: userData.stripeCustomerId,
+        return_url: `${appUrl}/`,
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error("Error creating portal session:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Validate Coach Code
   app.post("/api/validate-coach-code", async (req, res) => {
     const { code, userId } = req.body;
@@ -145,9 +203,15 @@ async function startServer() {
       const codeDoc = snapshot.docs[0];
       const codeData = codeDoc.data();
       
+      // Fetch user profile to get name/email for admin view
+      const userDoc = await db.collection("users").doc(userId).get();
+      const userData = userDoc.data();
+
       await codeDoc.ref.update({
         isUsed: true,
         usedBy: userId,
+        usedByName: userData?.displayName || null,
+        usedByEmail: userData?.email || null,
         usedAt: new Date().toISOString(),
       });
 
@@ -166,10 +230,98 @@ async function startServer() {
       await db.collection("users").doc(userId).update(updates);
 
       // Update team subscription status as well
-      const userDoc = await db.collection("users").doc(userId).get();
-      const userData = userDoc.data();
       if (userData?.teamId) {
         await db.collection("teams").doc(userData.teamId).update(updates);
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Populate Dummy Data
+  app.post("/api/populate-dummy-data", async (req, res) => {
+    const { userId, email } = req.body;
+    if (email !== 'chrisjeal9@gmail.com') {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+    if (!db) return res.status(500).json({ error: "Database not initialized" });
+
+    try {
+      const teamId = `team_${Date.now()}`;
+      await db.collection("teams").doc(teamId).set({
+        name: "Dummy Team",
+        code: "123456",
+        coachId: userId,
+        matchDuration: 45,
+        subscriptionStatus: "active"
+      });
+
+      await db.collection("users").doc(userId).update({
+        teamId,
+        role: "coach",
+        subscriptionStatus: "active"
+      });
+
+      // Add players
+      for (let i = 1; i <= 14; i++) {
+          await db.collection("players").add({
+              teamId,
+              name: `Player ${i}`,
+              number: i,
+              position: i % 2 === 0 ? "Forward" : "Defender",
+              inviteCode: `P-${i}${i}${i}${i}${i}${i}`
+          });
+      }
+
+      // Add training sessions
+      const now = new Date();
+      for (let i = -5; i <= 5; i++) {
+          const date = new Date(now);
+          date.setDate(date.getDate() + i * 7);
+          await db.collection("trainingSessions").add({
+              teamId,
+              title: `Training Session ${i > 0 ? 'Future' : 'Past'} ${i}`,
+              date: date.toISOString(),
+              location: "Main Pitch",
+              notes: "Focus on passing and movement."
+          });
+      }
+
+      // Add matches
+      for (let i = -3; i <= 3; i++) {
+          const date = new Date(now);
+          date.setDate(date.getDate() + i * 14);
+          await db.collection("matches").add({
+              teamId,
+              opponent: `Opponent ${i}`,
+              date: date.toISOString(),
+              location: i > 0 ? "Away" : "Home",
+              result: i < 0 ? (i % 2 === 0 ? "Win" : "Loss") : null
+          });
+      }
+
+      // Add news
+      for (let i = 1; i <= 5; i++) {
+          await db.collection("news").add({
+              teamId,
+              title: `News Post ${i}`,
+              content: `This is dummy news post ${i}.`,
+              authorId: userId,
+              createdAt: new Date().toISOString()
+          });
+      }
+      
+      // Add messages
+      for (let i = 1; i <= 5; i++) {
+          await db.collection("messages").add({
+              teamId,
+              text: `Message ${i}`,
+              senderId: userId,
+              senderName: "Coach",
+              createdAt: new Date().toISOString()
+          });
       }
 
       res.json({ success: true });

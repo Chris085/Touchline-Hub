@@ -23,12 +23,14 @@ export interface UserProfile {
   teamId?: string;
   subscriptionStatus?: 'active' | 'inactive';
   trialEndDate?: string;
+  stripeCustomerId?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  isSubscribed: boolean;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, name: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -44,6 +46,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  const isSubscribed = !!(
+    profile?.subscriptionStatus === 'active' || 
+    profile?.email === 'chrisjeal9@gmail.com' ||
+    (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date())
+  );
 
   if (error) {
     throw error;
@@ -77,12 +85,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (teamSnap.exists()) {
                   const teamData = teamSnap.data();
                   
-                  // Merge team subscription info if it's better than user's
+                  // If team has active subscription, all members are active
+                  console.log(`[AuthContext] Team ${userData.teamId} data:`, teamData);
                   if (teamData.subscriptionStatus === 'active') {
+                    console.log("[AuthContext] Team has active subscription, inheriting status.");
                     mergedProfile.subscriptionStatus = 'active';
+                  } else {
+                    console.log("[AuthContext] Team subscription not active. Using user's own status:", userData.subscriptionStatus);
                   }
+                  
                   if (teamData.trialEndDate) {
-                    if (!mergedProfile.trialEndDate || new Date(teamData.trialEndDate) > new Date(mergedProfile.trialEndDate)) {
+                    const teamTrialEnd = new Date(teamData.trialEndDate);
+                    const userTrialEnd = mergedProfile.trialEndDate ? new Date(mergedProfile.trialEndDate) : new Date(0);
+                    
+                    if (teamTrialEnd > userTrialEnd) {
+                      console.log("[AuthContext] Inheriting team trial end date:", teamData.trialEndDate);
                       mergedProfile.trialEndDate = teamData.trialEndDate;
                     }
                   }
@@ -210,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, updateProfile, deleteProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, isSubscribed, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, updateProfile, deleteProfile }}>
       {children}
     </AuthContext.Provider>
   );

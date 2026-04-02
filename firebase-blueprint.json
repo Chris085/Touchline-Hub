@@ -50,7 +50,10 @@
       "properties": {
         "name": { "type": "string" },
         "code": { "type": "string", "description": "6-digit code for parents to join" },
-        "coachId": { "type": "string" }
+        "coachId": { "type": "string" },
+        "seasonStart": { "type": "string", "format": "date" },
+        "seasonEnd": { "type": "string", "format": "date" },
+        "seasonTag": { "type": "string", "description": "e.g., 25/26" }
       },
       "required": ["name", "code", "coachId"]
     },
@@ -79,6 +82,7 @@
       "type": "object",
       "properties": {
         "teamId": { "type": "string" },
+        "season": { "type": "string", "description": "Season tag, e.g., 25/26" },
         "type": { "type": "string", "enum": ["match", "training"] },
         "matchCategory": { "type": "string", "enum": ["league", "cup", "friendly"] },
         "opponent": { "type": "string" },

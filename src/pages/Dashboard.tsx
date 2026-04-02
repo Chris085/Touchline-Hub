@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, where, onSnapshot, addDoc, doc, setDoc, deleteDoc, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, doc, setDoc, deleteDoc, orderBy, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { format } from 'date-fns';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -19,6 +19,7 @@ interface Match {
   status: 'scheduled' | 'in-progress' | 'completed';
   scoreUs?: number;
   scoreThem?: number;
+  season?: string;
 }
 
 interface Availability {
@@ -32,15 +33,27 @@ interface Availability {
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Dashboard() {
-  const { profile } = useAuth();
+  const { profile, isSubscribed } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [matches, setMatches] = useState<Match[]>([]);
   const [availabilities, setAvailabilities] = useState<Record<string, Availability>>({});
   const [players, setPlayers] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [teamData, setTeamData] = useState<any>(null);
 
   useEffect(() => {
+    if (!profile?.teamId) return;
+
+    // Fetch team data
+    const fetchTeam = async () => {
+      const teamRef = doc(db, 'teams', profile.teamId);
+      const teamSnap = await getDoc(teamRef);
+      if (teamSnap.exists()) {
+        setTeamData(teamSnap.data());
+      }
+    };
+    fetchTeam();
     if (searchParams.get('add') === 'true') {
       setShowAddModal(true);
       // Clean up the URL
@@ -140,6 +153,7 @@ export function Dashboard() {
             ...newMatch,
             date: currentDate.toISOString().slice(0, 16),
             teamId: profile.teamId,
+            season: teamData?.seasonTag || null
           }));
           currentDate.setDate(currentDate.getDate() + repeatDays);
         }
@@ -148,6 +162,7 @@ export function Dashboard() {
         await addDoc(collection(db, 'matches'), {
           ...newMatch,
           teamId: profile.teamId,
+          season: teamData?.seasonTag || null
         });
       }
       setShowAddModal(false);
@@ -242,10 +257,6 @@ export function Dashboard() {
   };
 
   const nextMatch = matches.find(m => m.type === 'match' && new Date(m.date) > new Date());
-
-  const isSubscribed = profile?.subscriptionStatus === 'active' || 
-                      profile?.email === 'chrisjeal9@gmail.com' ||
-                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
 
   return (
     <div className="space-y-8 relative pb-20">
@@ -479,6 +490,11 @@ export function Dashboard() {
                             {match.status === 'completed' && (
                               <span className="text-[8px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-full bg-chalk-white/5 text-chalk-white/30 border border-chalk-white/10 font-display italic">
                                 Final
+                              </span>
+                            )}
+                            {match.season && (
+                              <span className="text-[8px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-full bg-green-500/10 text-green-500 border border-green-500/20 font-display italic">
+                                {match.season}
                               </span>
                             )}
                           </div>

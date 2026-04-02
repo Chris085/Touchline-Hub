@@ -309,6 +309,11 @@ export function ScheduleDetails() {
               <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border font-display italic ${match.type === 'match' ? 'bg-pitch-green/10 text-pitch-green border-pitch-green/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
                 {match.type === 'match' ? 'Match' : 'Training'}
               </span>
+              {match.season && (
+                <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-green-500/10 text-green-500 border border-green-500/20 font-display italic">
+                  {match.season}
+                </span>
+              )}
               {match.type === 'match' && match.matchCategory && (
                 <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-chalk-white/5 text-chalk-white/40 border border-chalk-white/10 font-display italic">
                   {match.matchCategory}

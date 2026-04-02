@@ -51,6 +51,15 @@ export function PlayerProfile() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data) {
+          // Access check: only coaches or linked parents can view profile
+          const isCoach = profile?.role === 'coach';
+          const isParent = data.parentIds?.includes(profile?.uid);
+          
+          if (!isCoach && !isParent) {
+            navigate('/squad');
+            return;
+          }
+          
           setPlayer({ id: docSnap.id, ...data });
         }
       } else {

@@ -33,7 +33,7 @@ interface ChatMessage {
 }
 
 export function TeamChat() {
-  const { profile } = useAuth();
+  const { profile, loading: authLoading, isSubscribed } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -83,10 +83,6 @@ export function TeamChat() {
     setShowScrollButton(!isAtBottom);
   };
 
-  const isSubscribed = profile?.subscriptionStatus === 'active' || 
-                      profile?.email === 'chrisjeal9@gmail.com' ||
-                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
-
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile || !newMessage.trim() || !isSubscribed) return;
@@ -109,7 +105,7 @@ export function TeamChat() {
     }
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>

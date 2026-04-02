@@ -19,7 +19,9 @@ import {
   LayoutGrid,
   Zap,
   Plus,
-  BarChart3
+  BarChart3,
+  CreditCard,
+  ChevronRight
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ConfirmModal } from './ConfirmModal';
@@ -28,7 +30,7 @@ import { db } from '../firebase';
 import { AnimatePresence, motion } from 'motion/react';
 
 export function Layout() {
-  const { profile, signOut, deleteProfile } = useAuth();
+  const { profile, signOut, deleteProfile, isSubscribed } = useAuth();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeMatch, setActiveMatch] = useState<boolean>(false);
@@ -136,6 +138,25 @@ export function Layout() {
 
   const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
 
+  const handleManageSubscription = async () => {
+    try {
+      const response = await fetch('/api/create-portal-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: profile?.uid }),
+      });
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || 'Failed to create portal session');
+      }
+    } catch (error: any) {
+      console.error('Error managing subscription:', error);
+      alert(error.message);
+    }
+  };
+
   const handleDeleteProfile = async () => {
     setConfirmModal({
       isOpen: true,
@@ -160,13 +181,14 @@ export function Layout() {
     adminOnly?: boolean;
     hasBadge?: boolean;
     hideIfActive?: boolean;
+    hideInMenu?: boolean;
   }[] = [
+    { name: 'Stats', path: '/stats', icon: BarChart3 },
+    { name: 'Squad', path: '/squad', icon: Users },
     { name: 'Schedule', path: '/', icon: Calendar, alwaysShow: true },
-    { name: 'Features', path: '/features', icon: LayoutGrid },
     { name: 'News', path: '/news', icon: Newspaper, hasBadge: hasUnreadNews },
     { name: 'Chat', path: '/chat', icon: MessageSquare, hasBadge: hasUnreadChat },
-    { name: 'Squad', path: '/squad', icon: Users },
-    { name: 'Stats', path: '/stats', icon: BarChart3 },
+    { name: 'Features', path: '/features', icon: LayoutGrid },
     { name: 'Notes', path: '/notes', icon: FileText, coachOnly: true },
     { name: 'Admin', path: '/admin', icon: Shield, adminOnly: true },
     { 
@@ -176,7 +198,8 @@ export function Layout() {
       active: activeMatch, 
       dynamic: true,
       pulse: true,
-      glow: false 
+      glow: false,
+      hideInMenu: true
     },
     { 
       name: 'MOTM', 
@@ -185,13 +208,10 @@ export function Layout() {
       active: activeVoting, 
       dynamic: true,
       pulse: true,
-      glow: true 
+      glow: true,
+      hideInMenu: !activeVoting
     },
   ];
-
-  const isSubscribed = profile?.subscriptionStatus === 'active' || 
-                      profile?.email === 'chrisjeal9@gmail.com' ||
-                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
 
   const trialDaysLeft = profile?.trialEndDate 
     ? Math.ceil((new Date(profile.trialEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
@@ -208,6 +228,7 @@ export function Layout() {
 
   const burgerItems = navItems.filter(item => 
     !item.alwaysShow && 
+    !item.hideInMenu &&
     (!item.coachOnly || profile?.role === 'coach') &&
     (!item.adminOnly || profile?.email === 'chrisjeal9@gmail.com') &&
     (!item.hideIfActive || !isSubscribed)
@@ -246,15 +267,6 @@ export function Layout() {
             </div>
             
             <div className="flex items-center gap-4">
-              {profile?.email === 'chrisjeal9@gmail.com' && (
-                <Link 
-                  to="/admin" 
-                  className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-500 hover:bg-green-500/20 transition-all"
-                >
-                  <Shield size={14} />
-                  <span className="text-xs font-bold uppercase tracking-wider">Admin</span>
-                </Link>
-              )}
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/50 border border-slate-700/50">
                 {profile?.role === 'coach' ? (
                   <Shield size={14} className="text-green-400" />
@@ -302,15 +314,20 @@ export function Layout() {
 
               <div className="flex-1 overflow-y-auto py-4">
                 <div className="px-4 mb-4">
-                  <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700/50 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-400">
+                  <Link 
+                    to="/profile"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700/50 flex items-center gap-3 hover:bg-slate-800 hover:border-slate-600 transition-all group"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 group-hover:text-green-400 transition-colors">
                       <User size={20} />
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-white truncate max-w-[160px]">{profile?.displayName || 'User'}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{profile?.displayName || 'User'}</p>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{profile?.role}</p>
                     </div>
-                  </div>
+                    <ChevronRight size={16} className="text-slate-600 group-hover:text-slate-400 transition-colors" />
+                  </Link>
                 </div>
 
                 <nav className="px-2 space-y-1">
@@ -391,6 +408,15 @@ export function Layout() {
                 )}
 
                 <div className="space-y-1">
+                  {profile?.stripeCustomerId && (
+                    <button
+                      onClick={handleManageSubscription}
+                      className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-green-400 hover:bg-green-500/10 transition-all"
+                    >
+                      <CreditCard size={20} />
+                      <span className="font-medium">Manage Subscription</span>
+                    </button>
+                  )}
                   <button
                     onClick={signOut}
                     className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all"

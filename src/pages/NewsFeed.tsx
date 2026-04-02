@@ -57,7 +57,7 @@ interface NewsComment {
 }
 
 export function NewsFeed() {
-  const { profile } = useAuth();
+  const { profile, isSubscribed } = useAuth();
   const [posts, setPosts] = useState<NewsPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -110,10 +110,6 @@ export function NewsFeed() {
       unsubscribeLikes();
     };
   }, [profile?.teamId, profile?.uid]);
-
-  const isSubscribed = profile?.subscriptionStatus === 'active' || 
-                      profile?.email === 'chrisjeal9@gmail.com' ||
-                      (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date());
 
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
