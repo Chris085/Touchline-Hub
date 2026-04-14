@@ -111,7 +111,13 @@ export function Onboarding() {
         }
 
         const teamDoc = querySnapshot.docs[0];
-        await updateProfile({ role: 'coach', teamId: teamDoc.id, ...subscriptionUpdates });
+        const teamData = teamDoc.data();
+        await updateProfile({ 
+          role: 'coach', 
+          teamId: teamDoc.id, 
+          joinedTeams: [{ teamId: teamDoc.id, role: 'coach', teamName: teamData.name }],
+          ...subscriptionUpdates 
+        });
       } else {
         // Creating a new team
         // Generate a random 6-digit code
@@ -154,7 +160,11 @@ export function Onboarding() {
     if (!createdTeam) return;
     setLoading(true);
     try {
-      await updateProfile({ role: 'coach', teamId: createdTeam.id });
+      await updateProfile({ 
+        role: 'coach', 
+        teamId: createdTeam.id,
+        joinedTeams: [{ teamId: createdTeam.id, role: 'coach', teamName: teamName }]
+      });
     } catch (err: any) {
       try {
         const parsed = JSON.parse(err.message);
@@ -199,12 +209,20 @@ export function Onboarding() {
           return;
         }
 
+        // Get team name for joinedTeams
+        const teamSnap = await getDocs(query(collection(db, 'teams'), where('__name__', '==', playerData.teamId)));
+        const teamName = !teamSnap.empty ? teamSnap.docs[0].data().name : 'Unknown Team';
+
         // Add user to player's parentIds
         await updateDoc(doc(db, 'players', playerDoc.id), {
           parentIds: arrayUnion(user?.uid)
         });
 
-        await updateProfile({ role: 'parent', teamId: playerData.teamId });
+        await updateProfile({ 
+          role: 'parent', 
+          teamId: playerData.teamId,
+          joinedTeams: [{ teamId: playerData.teamId, role: 'parent', teamName }]
+        });
       } else {
         // Legacy Team Code (6 digits)
         const teamsRef = collection(db, 'teams');
@@ -218,7 +236,12 @@ export function Onboarding() {
         }
 
         const teamDoc = querySnapshot.docs[0];
-        await updateProfile({ role: 'parent', teamId: teamDoc.id });
+        const teamData = teamDoc.data();
+        await updateProfile({ 
+          role: 'parent', 
+          teamId: teamDoc.id,
+          joinedTeams: [{ teamId: teamDoc.id, role: 'parent', teamName: teamData.name }]
+        });
       }
     } catch (err: any) {
       try {

@@ -13,6 +13,7 @@ import {
   deleteDoc,
   increment,
   getDocs,
+  getDoc,
   setDoc
 } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
@@ -32,6 +33,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { triggerNotification } from '../lib/notifications';
 
 interface NewsPost {
   id: string;
@@ -57,9 +59,10 @@ interface NewsComment {
 }
 
 export function NewsFeed() {
-  const { profile, isSubscribed } = useAuth();
+  const { profile, isSubscribed, isAdmin } = useAuth();
   const [posts, setPosts] = useState<NewsPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const isCoach = profile?.role === 'coach' || isAdmin;
   const [isCreating, setIsCreating] = useState(false);
   const [newPostContent, setNewPostContent] = useState('');
   const [newPostImage, setNewPostImage] = useState<string | null>(null);
@@ -120,13 +123,22 @@ export function NewsFeed() {
         teamId: profile.teamId,
         authorId: profile.uid,
         authorName: profile.displayName || 'Anonymous',
-        authorRole: profile.role,
+        authorRole: isAdmin ? 'admin' : (profile.role || 'parent'),
         content: newPostContent.trim(),
         imageUrl: newPostImage,
         createdAt: new Date().toISOString(),
         likesCount: 0,
         commentsCount: 0
       });
+
+      // Trigger Notification
+      await triggerNotification({
+        teamId: profile.teamId,
+        title: 'New Team News',
+        body: `${profile.displayName} posted: ${newPostContent.slice(0, 50)}${newPostContent.length > 50 ? '...' : ''}`,
+        data: { type: 'new_news' }
+      });
+
       setNewPostContent('');
       setNewPostImage(null);
       setIsCreating(false);
@@ -204,6 +216,19 @@ export function NewsFeed() {
         content: content.trim(),
         createdAt: new Date().toISOString()
       });
+
+      // Trigger Notification (to post author)
+      const postDoc = await getDoc(doc(db, 'newsPosts', postId));
+      const postData = postDoc.data();
+      if (postData && postData.authorId !== profile.uid) {
+        await triggerNotification({
+          recipientIds: [postData.authorId],
+          title: 'New Comment on your post',
+          body: `${profile.displayName} commented: ${content.slice(0, 50)}`,
+          data: { type: 'new_comment', postId }
+        });
+      }
+
       await updateDoc(doc(db, 'newsPosts', postId), {
         commentsCount: increment(1)
       });
@@ -277,7 +302,7 @@ export function NewsFeed() {
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white tracking-tight">Team Feed</h1>
-        {profile?.role === 'coach' && (
+        {isCoach && (
           <button
             onClick={() => {
               if (!isSubscribed) {
@@ -382,7 +407,7 @@ export function NewsFeed() {
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white">{post.authorName}</span>
                         <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                          {post.authorRole}
+                          {post.authorRole === 'admin' ? 'Admin' : post.authorRole}
                         </span>
                       </div>
                       <span className="text-xs text-slate-500">

@@ -19,7 +19,7 @@ interface Player {
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Squad() {
-  const { profile, isSubscribed } = useAuth();
+  const { profile, isSubscribed, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -247,7 +247,7 @@ export function Squad() {
     }
   };
 
-  const isCoach = profile?.role === 'coach';
+  const isCoach = profile?.role === 'coach' || isAdmin;
   const canViewProfile = (player: Player) => isCoach || player.parentIds?.includes(profile?.uid || '');
 
   return (
@@ -260,8 +260,8 @@ export function Squad() {
           <p className="text-pitch-green font-bold uppercase tracking-widest text-[10px] mt-1">{team?.name || 'Loading team...'}</p>
         </div>
         
-        <div className="flex gap-3">
-          {profile?.role === 'coach' && team && (
+        <div className="flex flex-wrap gap-3">
+          {isCoach && team && (
             <button
               onClick={() => setShowTeamInviteModal(true)}
               className="bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white px-5 py-3 rounded-xl font-bold flex items-center gap-3 transition-all border border-chalk-white/5 shadow-xl group"
@@ -271,7 +271,7 @@ export function Squad() {
             </button>
           )}
           
-          {(profile?.role === 'coach') && (
+          {isCoach && (
             <button
               onClick={() => {
                 if (!isSubscribed) {
@@ -287,7 +287,7 @@ export function Squad() {
             </button>
           )}
           
-          {(profile?.role === 'parent') && (
+          {(profile?.role === 'parent' && !isAdmin) && (
             <button
               onClick={() => {
                 if (!isSubscribed) {
@@ -313,7 +313,7 @@ export function Squad() {
           </div>
           <h3 className="text-2xl font-display italic uppercase font-black text-chalk-white mb-3 relative z-10">No players yet</h3>
           <p className="text-chalk-white/40 text-sm font-medium max-w-xs mx-auto relative z-10">
-            {profile?.role === 'coach' 
+            {isCoach 
               ? "Add players to your squad to generate invite codes for their parents." 
               : "Click 'Add Player' and enter an invite code from your coach."}
           </p>
@@ -351,7 +351,7 @@ export function Squad() {
                   )}
                 </div>
                 <div>
-                  <h4 className="text-chalk-white font-display italic uppercase font-black text-lg group-hover:text-pitch-green transition-colors leading-tight">{player.name}</h4>
+                  <h4 className="text-chalk-white font-display italic uppercase font-black text-lg group-hover:text-pitch-green transition-colors leading-tight break-words">{player.name}</h4>
                   <div className="flex items-center gap-3 mt-1.5">
                     {player.position && (
                       <span className="bg-pitch-green/10 text-pitch-green px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border border-pitch-green/20">

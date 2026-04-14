@@ -53,7 +53,17 @@
         "coachId": { "type": "string" },
         "seasonStart": { "type": "string", "format": "date" },
         "seasonEnd": { "type": "string", "format": "date" },
-        "seasonTag": { "type": "string", "description": "e.g., 25/26" }
+        "seasonTag": { "type": "string", "description": "e.g., 25/26" },
+        "paymentSettings": {
+          "type": "object",
+          "properties": {
+            "collectMatchFees": { "type": "boolean" },
+            "matchFeeAmount": { "type": "number" },
+            "collectMonthlySubs": { "type": "boolean" },
+            "monthlySubAmount": { "type": "number" },
+            "currency": { "type": "string", "default": "£" }
+          }
+        }
       },
       "required": ["name", "code", "coachId"]
     },
@@ -90,7 +100,8 @@
         "location": { "type": "string" },
         "postcode": { "type": "string" },
         "trainingNotes": { "type": "string" },
-        "status": { "type": "string", "enum": ["scheduled", "in-progress", "completed"] },
+        "status": { "type": "string", "enum": ["scheduled", "in-progress", "completed", "postponed"] },
+        "postponedNote": { "type": "string" },
         "scoreUs": { "type": "number" },
         "scoreThem": { "type": "number" },
         "timerStartTime": { "type": "string", "format": "date-time" },
@@ -103,6 +114,8 @@
         "onBench": { "type": "array", "items": { "type": "string" } },
         "coachPotmId": { "type": "string" },
         "coachPotmName": { "type": "string" },
+        "parentPotmId": { "type": "string" },
+        "parentPotmName": { "type": "string" },
         "isPotmVotingOpen": { "type": "boolean" },
         "events": {
           "type": "array",
@@ -243,6 +256,46 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["teamId", "authorId", "content", "type", "createdAt"]
+    },
+    "PlayerPayment": {
+      "title": "Player Payment",
+      "description": "Tracks a player's payment balance for match fees",
+      "type": "object",
+      "properties": {
+        "playerId": { "type": "string" },
+        "teamId": { "type": "string" },
+        "totalPaid": { "type": "number" },
+        "matchesPlayed": { "type": "number", "description": "Number of matches this player has been charged for" },
+        "lastPaymentDate": { "type": "string", "format": "date-time" }
+      },
+      "required": ["playerId", "teamId", "totalPaid", "matchesPlayed"]
+    },
+    "PaymentTransaction": {
+      "title": "Payment Transaction",
+      "description": "An individual payment made by a parent",
+      "type": "object",
+      "properties": {
+        "playerId": { "type": "string" },
+        "teamId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["match", "monthly"] },
+        "note": { "type": "string" }
+      },
+      "required": ["playerId", "teamId", "amount", "date", "type"]
+    },
+    "MonthlySub": {
+      "title": "Monthly Sub",
+      "description": "Tracks monthly subscription status for a player",
+      "type": "object",
+      "properties": {
+        "playerId": { "type": "string" },
+        "teamId": { "type": "string" },
+        "month": { "type": "string", "description": "YYYY-MM format" },
+        "status": { "type": "string", "enum": ["paid", "unpaid", "exempt"] },
+        "paidAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["playerId", "teamId", "month", "status"]
     }
   },
   "firestore": {
@@ -305,6 +358,18 @@
     "coachCodes/{codeId}": {
       "schema": "CoachCode",
       "description": "Coach access codes"
+    },
+    "playerPayments/{paymentId}": {
+      "schema": "PlayerPayment",
+      "description": "Player payment balances"
+    },
+    "paymentTransactions/{transactionId}": {
+      "schema": "PaymentTransaction",
+      "description": "Individual payment records"
+    },
+    "monthlySubs/{subId}": {
+      "schema": "MonthlySub",
+      "description": "Monthly subscription records"
     }
   }
 }

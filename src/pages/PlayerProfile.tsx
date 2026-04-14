@@ -1,20 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, collection, query, where, onSnapshot, addDoc, orderBy, updateDoc } from 'firebase/firestore';
+import { doc, collection, query, where, onSnapshot, addDoc, orderBy, updateDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { format } from 'date-fns';
-import { ArrowLeft, User, Star, FileText, Activity, CheckCircle, AlertCircle, XCircle, Heart, Camera, Upload } from 'lucide-react';
+import { format, isAfter, startOfDay } from 'date-fns';
+import { ArrowLeft, User, Star, FileText, Activity, CheckCircle, AlertCircle, XCircle, Heart, Camera, Upload, Trophy, Target, TrendingUp, Calendar, Clock, MapPin, Award } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export function PlayerProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
   
   const [player, setPlayer] = useState<any>(null);
   const [notes, setNotes] = useState<any[]>([]);
   const [attendances, setAttendances] = useState<any[]>([]);
+  const [matches, setMatches] = useState<any[]>([]);
+  const [availabilities, setAvailabilities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [newNote, setNewNote] = useState('');
@@ -29,9 +31,11 @@ export function PlayerProfile() {
   const [updatingProfile, setUpdatingProfile] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [playerBalance, setPlayerBalance] = useState<any>(null);
+  const [team, setTeam] = useState<any>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const isCoach = profile?.role === 'coach';
+  const isCoach = profile?.role === 'coach' || isAdmin;
 
   useEffect(() => {
     if (player) {
@@ -44,6 +48,30 @@ export function PlayerProfile() {
 
   useEffect(() => {
     if (!id || !profile?.teamId) return;
+    
+    // Fetch player balance
+    const q = query(collection(db, 'playerPayments'), where('playerId', '==', id), where('teamId', '==', profile.teamId));
+    const unsubBalance = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setPlayerBalance(snapshot.docs[0].data());
+      }
+    });
+
+    // Fetch team settings
+    const unsubTeam = onSnapshot(doc(db, 'teams', profile.teamId), (doc) => {
+      if (doc.exists()) {
+        setTeam({ id: doc.id, ...doc.data() });
+      }
+    });
+
+    return () => {
+      unsubBalance();
+      unsubTeam();
+    };
+  }, [id, profile?.teamId]);
+
+  useEffect(() => {
+    if (!id || !profile?.teamId) return;
 
     // Fetch player
     const playerRef = doc(db, 'players', id);
@@ -52,7 +80,7 @@ export function PlayerProfile() {
         const data = docSnap.data();
         if (data) {
           // Access check: only coaches or linked parents can view profile
-          const isCoach = profile?.role === 'coach';
+          const isCoach = profile?.role === 'coach' || isAdmin;
           const isParent = data.parentIds?.includes(profile?.uid);
           
           if (!isCoach && !isParent) {
@@ -71,34 +99,134 @@ export function PlayerProfile() {
       handleFirestoreError(error, OperationType.GET, `players/${id}`);
     });
 
-    // Fetch notes
-    const notesRef = collection(db, 'playerNotes');
-    const qNotes = query(
-      notesRef, 
-      where('playerId', '==', id),
-      where('teamId', '==', profile.teamId)
-    );
-    const unsubNotes = onSnapshot(qNotes, (snapshot) => {
-      const notesData = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
-      // Sort client-side to avoid needing a composite index immediately
-      notesData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setNotes(notesData);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'playerNotes'));
+    // Fetch notes (only for coaches/admins)
+    let unsubNotes = () => {};
+    const isCoachOrAdmin = profile?.role === 'coach' || profile?.email === 'chrisjeal9@gmail.com';
+    
+    if (isCoachOrAdmin) {
+      const notesRef = collection(db, 'playerNotes');
+      const qNotes = query(
+        notesRef, 
+        where('playerId', '==', id),
+        where('teamId', '==', profile.teamId)
+      );
+      unsubNotes = onSnapshot(qNotes, (snapshot) => {
+        const notesData = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+        // Sort client-side to avoid needing a composite index immediately
+        notesData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setNotes(notesData);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'playerNotes'));
+    }
 
     // Fetch attendances
     const attRef = collection(db, 'attendances');
-    const qAtt = query(attRef, where('playerId', '==', id));
+    const qAtt = query(
+      attRef, 
+      where('playerId', '==', id),
+      where('teamId', '==', profile.teamId)
+    );
     const unsubAtt = onSnapshot(qAtt, (snapshot) => {
       const attData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAttendances(attData);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'attendances'));
 
+    // Fetch matches for stats and availability
+    const matchesRef = collection(db, 'matches');
+    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId));
+    const unsubMatches = onSnapshot(qMatches, (snapshot) => {
+      setMatches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'matches'));
+
+    // Fetch player's availabilities
+    const availRef = collection(db, 'availabilities');
+    const qAvail = query(availRef, where('playerId', '==', id), where('teamId', '==', profile.teamId));
+    const unsubAvail = onSnapshot(qAvail, (snapshot) => {
+      setAvailabilities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'availabilities'));
+
     return () => {
       unsubPlayer();
       unsubNotes();
       unsubAtt();
+      unsubMatches();
+      unsubAvail();
     };
-  }, [id, profile?.teamId, navigate]);
+  }, [id, profile?.teamId, profile?.role, profile?.email, navigate]);
+
+  const stats = useMemo(() => {
+    if (!player || !id) return null;
+    
+    const completedMatches = matches.filter(m => m.status === 'completed' && m.type === 'match');
+    
+    let goals = 0;
+    let assists = 0;
+    let motmAwards = 0;
+    const motmHistory: any[] = [];
+
+    completedMatches.forEach(m => {
+      // Stats from events
+      (m.events || []).forEach((event: any) => {
+        if (event.type === 'goal' && event.playerId === id) {
+          goals++;
+        }
+        if (event.type === 'goal' && event.assistId === id) {
+          assists++;
+        }
+      });
+
+      // MOTM Awards
+      const isCoachMotm = m.coachPotmId === id;
+      const isParentMotm = m.parentPotmId === id || m.parentsPotmId === id;
+      
+      if (isCoachMotm || isParentMotm) {
+        motmAwards++;
+        motmHistory.push({
+          matchId: m.id,
+          opponent: m.opponent,
+          date: m.date,
+          type: isCoachMotm && isParentMotm ? 'Both' : isCoachMotm ? 'Coach' : 'Parents'
+        });
+      }
+    });
+
+    // Upcoming availability
+    const upcoming = matches
+      .filter(m => m.date && isAfter(new Date(m.date), startOfDay(new Date())))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(0, 5)
+      .map(m => {
+        const avail = availabilities.find(a => a.matchId === m.id);
+        return {
+          ...m,
+          availability: avail?.status || 'none'
+        };
+      });
+
+    return {
+      goals,
+      assists,
+      motmAwards,
+      motmHistory: motmHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+      upcoming
+    };
+  }, [id, player, matches, availabilities]);
+
+  const handleSetAvailability = async (matchId: string, status: 'going' | 'not-going' | 'maybe') => {
+    if (!profile?.uid || !profile?.teamId || !id) return;
+
+    try {
+      const availId = `${matchId}_${id}`;
+      await setDoc(doc(db, 'availabilities', availId), {
+        matchId,
+        playerId: id,
+        parentId: profile.uid,
+        teamId: profile.teamId,
+        status
+      }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'availabilities');
+    }
+  };
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -235,6 +363,15 @@ export function PlayerProfile() {
   const absentCount = attendances.filter(a => a.status === 'absent').length;
   const totalSessions = attendances.length;
   const attendanceRate = totalSessions > 0 ? Math.round((presentCount / totalSessions) * 100) : 0;
+
+  const calculateAmountOwed = () => {
+    if (!playerBalance || !team) return 0;
+    const fee = team.paymentSettings?.matchFeeAmount || 0;
+    const totalOwed = (playerBalance.matchesPlayed * fee) - playerBalance.totalPaid;
+    return Math.max(0, totalOwed);
+  };
+
+  const owed = calculateAmountOwed();
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20">
@@ -386,6 +523,20 @@ export function PlayerProfile() {
                   {player.number && <span className="bg-slate-800 px-2 py-0.5 rounded text-sm">#{player.number}</span>}
                   {player.position && <span>{player.position}</span>}
                 </div>
+                {/* Payment Status Message */}
+                <div className="mt-2 text-sm">
+                  {owed > 0 ? (
+                    <span className="text-red-400 font-medium flex items-center gap-1">
+                      <AlertCircle size={14} />
+                      Outstanding balance: {team?.paymentSettings?.currency || '£'}{owed.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="text-green-400 font-medium flex items-center gap-1">
+                      <CheckCircle size={14} />
+                      All payments up to date
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -414,50 +565,186 @@ export function PlayerProfile() {
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:col-span-1 h-fit"
-        >
-          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Activity size={20} className="text-slate-400" />
-            Attendance Stats
-          </h2>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-slate-950 rounded-xl border border-slate-800">
-              <span className="text-slate-400">Attendance Rate</span>
-              <span className="text-xl font-bold text-white">{attendanceRate}%</span>
-            </div>
+        <div className="md:col-span-1 space-y-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
+          >
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Trophy size={20} className="text-yellow-500" />
+              Season Stats
+            </h2>
             
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2 text-green-400">
-                  <CheckCircle size={16} />
-                  <span>Present</span>
-                </div>
-                <span className="font-medium text-white">{presentCount}</span>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center">
+                <Target size={20} className="text-blue-500 mx-auto mb-2" />
+                <div className="text-2xl font-black text-white italic font-display">{stats?.goals || 0}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Goals</div>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2 text-yellow-400">
-                  <AlertCircle size={16} />
-                  <span>Late</span>
-                </div>
-                <span className="font-medium text-white">{lateCount}</span>
+              <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center">
+                <TrendingUp size={20} className="text-green-500 mx-auto mb-2" />
+                <div className="text-2xl font-black text-white italic font-display">{stats?.assists || 0}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Assists</div>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2 text-red-400">
-                  <XCircle size={16} />
-                  <span>Absent</span>
-                </div>
-                <span className="font-medium text-white">{absentCount}</span>
+              <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center col-span-2">
+                <Star size={20} className="text-yellow-500 mx-auto mb-2" />
+                <div className="text-2xl font-black text-white italic font-display">{stats?.motmAwards || 0}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">MOTM Awards</div>
               </div>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
+          >
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Activity size={20} className="text-slate-400" />
+              Attendance Stats
+            </h2>
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <span className="text-slate-400">Attendance Rate</span>
+                <span className="text-xl font-bold text-white">{attendanceRate}%</span>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 text-green-400">
+                    <CheckCircle size={16} />
+                    <span>Present</span>
+                  </div>
+                  <span className="font-medium text-white">{presentCount}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 text-yellow-400">
+                    <AlertCircle size={16} />
+                    <span>Late</span>
+                  </div>
+                  <span className="font-medium text-white">{lateCount}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 text-red-400">
+                    <XCircle size={16} />
+                    <span>Absent</span>
+                  </div>
+                  <span className="font-medium text-white">{absentCount}</span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
+          >
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Calendar size={20} className="text-blue-400" />
+              Upcoming Availability
+            </h2>
+            
+            <div className="space-y-3">
+              {stats?.upcoming.map(m => (
+                <div key={m.id} className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
+                  <div className="min-w-0">
+                    <div className="text-xs font-black text-white uppercase italic font-display truncate">
+                      {m.type === 'match' ? `vs ${m.opponent}` : 'Training'}
+                    </div>
+                    <div className="text-[10px] text-slate-500 flex items-center gap-1">
+                      <Clock size={10} />
+                      {format(new Date(m.date), 'MMM d, h:mm a')}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    {isParent ? (
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleSetAvailability(m.id, 'going')}
+                          className={`w-6 h-6 rounded flex items-center justify-center transition-all ${
+                            m.availability === 'going' ? 'bg-green-500 text-slate-950' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
+                          }`}
+                          title="Going"
+                        >
+                          <CheckCircle size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleSetAvailability(m.id, 'maybe')}
+                          className={`w-6 h-6 rounded flex items-center justify-center transition-all ${
+                            m.availability === 'maybe' ? 'bg-yellow-500 text-slate-950' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
+                          }`}
+                          title="Maybe"
+                        >
+                          <AlertCircle size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleSetAvailability(m.id, 'not-going')}
+                          className={`w-6 h-6 rounded flex items-center justify-center transition-all ${
+                            m.availability === 'not-going' ? 'bg-red-500 text-slate-950' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
+                          }`}
+                          title="Not Going"
+                        >
+                          <XCircle size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className={`px-2 py-1 rounded text-[8px] font-black uppercase tracking-widest ${
+                        m.availability === 'going' ? 'bg-green-500/20 text-green-500' :
+                        m.availability === 'maybe' ? 'bg-yellow-500/20 text-yellow-500' :
+                        m.availability === 'not-going' ? 'bg-red-500/20 text-red-500' :
+                        'bg-slate-800 text-slate-500'
+                      }`}>
+                        {m.availability === 'none' ? 'No Response' : m.availability.replace('-', ' ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {stats?.upcoming.length === 0 && (
+                <p className="text-center py-4 text-slate-500 text-sm italic">No upcoming sessions.</p>
+              )}
+            </div>
+          </motion.div>
+        </div>
 
         <div className="md:col-span-2 space-y-6">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
+            className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
+          >
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Award size={20} className="text-yellow-500" />
+              MOTM History
+            </h2>
+            
+            <div className="grid gap-3 sm:grid-cols-2">
+              {stats?.motmHistory.map((h, i) => (
+                <div key={i} className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-yellow-500/10 rounded-lg flex items-center justify-center shrink-0">
+                    <Trophy size={20} className="text-yellow-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-black text-white uppercase italic font-display truncate">vs {h.opponent}</div>
+                    <div className="text-[10px] text-slate-500">{format(new Date(h.date), 'MMM d, yyyy')}</div>
+                    <div className="text-[8px] font-bold text-slate-600 uppercase tracking-tighter mt-0.5">Awarded by {h.type}</div>
+                  </div>
+                </div>
+              ))}
+              {stats?.motmHistory.length === 0 && (
+                <div className="col-span-2 text-center py-8 text-slate-500 text-sm italic">
+                  No MOTM awards yet. Keep working hard!
+                </div>
+              )}
+            </div>
+          </motion.div>
           {isCoach && (
             <motion.div 
               initial={{ opacity: 0, y: 20 }}

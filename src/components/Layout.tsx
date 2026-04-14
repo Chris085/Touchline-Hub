@@ -21,7 +21,9 @@ import {
   Plus,
   BarChart3,
   CreditCard,
-  ChevronRight
+  ChevronRight,
+  Wallet,
+  BookOpen
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ConfirmModal } from './ConfirmModal';
@@ -30,7 +32,7 @@ import { db } from '../firebase';
 import { AnimatePresence, motion } from 'motion/react';
 
 export function Layout() {
-  const { profile, signOut, deleteProfile, isSubscribed } = useAuth();
+  const { profile, signOut, deleteProfile, isSubscribed, isAdmin } = useAuth();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeMatch, setActiveMatch] = useState<boolean>(false);
@@ -184,10 +186,12 @@ export function Layout() {
     hideInMenu?: boolean;
   }[] = [
     { name: 'Stats', path: '/stats', icon: BarChart3 },
+    { name: 'Payments', path: '/payments', icon: Wallet, coachOnly: true },
     { name: 'Squad', path: '/squad', icon: Users },
     { name: 'Schedule', path: '/', icon: Calendar, alwaysShow: true },
     { name: 'News', path: '/news', icon: Newspaper, hasBadge: hasUnreadNews },
     { name: 'Chat', path: '/chat', icon: MessageSquare, hasBadge: hasUnreadChat },
+    { name: 'Learning', path: '/learning', icon: BookOpen },
     { name: 'Features', path: '/features', icon: LayoutGrid },
     { name: 'Notes', path: '/notes', icon: FileText, coachOnly: true },
     { name: 'Admin', path: '/admin', icon: Shield, adminOnly: true },
@@ -217,20 +221,20 @@ export function Layout() {
     ? Math.ceil((new Date(profile.trialEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
     : 0;
 
-  const showTrialBanner = profile?.role === 'coach' && 
+  const showTrialBanner = (profile?.role === 'coach' || isAdmin) && 
                           profile?.subscriptionStatus !== 'active' && 
                           profile?.email !== 'chrisjeal9@gmail.com' &&
                           trialDaysLeft > 0;
 
   const bottomNavItems = navItems.filter(item => 
-    item.alwaysShow || (item.dynamic && item.active && (!item.coachOnly || profile?.role === 'coach'))
+    item.alwaysShow || (item.dynamic && item.active && (!item.coachOnly || profile?.role === 'coach' || isAdmin))
   );
 
   const burgerItems = navItems.filter(item => 
     !item.alwaysShow && 
     !item.hideInMenu &&
-    (!item.coachOnly || profile?.role === 'coach') &&
-    (!item.adminOnly || profile?.email === 'chrisjeal9@gmail.com') &&
+    (!item.coachOnly || profile?.role === 'coach' || isAdmin) &&
+    (!item.adminOnly || isAdmin) &&
     (!item.hideIfActive || !isSubscribed)
   );
 
@@ -268,13 +272,15 @@ export function Layout() {
             
             <div className="flex items-center gap-4">
               <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/50 border border-slate-700/50">
-                {profile?.role === 'coach' ? (
+                {isAdmin ? (
+                  <Shield size={14} className="text-purple-400" />
+                ) : profile?.role === 'coach' ? (
                   <Shield size={14} className="text-green-400" />
                 ) : (
                   <User size={14} className="text-blue-400" />
                 )}
                 <span className="text-xs font-medium text-slate-300 uppercase tracking-wider">
-                  {profile?.role === 'coach' ? 'Coach' : 'Parent'}
+                  {isAdmin ? 'Admin' : profile?.role === 'coach' ? 'Coach' : 'Parent'}
                 </span>
               </div>
             </div>
@@ -324,7 +330,9 @@ export function Layout() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-white truncate">{profile?.displayName || 'User'}</p>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">{profile?.role}</p>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
+                        {isAdmin ? 'Admin' : profile?.role}
+                      </p>
                     </div>
                     <ChevronRight size={16} className="text-slate-600 group-hover:text-slate-400 transition-colors" />
                   </Link>
@@ -359,14 +367,14 @@ export function Layout() {
               </div>
 
               <div className="p-4 border-t border-slate-800 space-y-4">
-                {profile?.role === 'coach' && (
+                {(profile?.role === 'coach' || isAdmin) && (
                   <div className="px-4 py-4 bg-slate-800/50 rounded-2xl border border-slate-700/50">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Subscription</span>
                       <Zap size={14} className={isSubscribed ? "text-green-400" : "text-slate-500"} />
                     </div>
                     
-                    {profile?.subscriptionStatus === 'active' || profile?.email === 'chrisjeal9@gmail.com' ? (
+                    {profile?.subscriptionStatus === 'active' || isAdmin ? (
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                         <p className="text-sm font-bold text-white">Premium Active</p>

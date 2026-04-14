@@ -10,7 +10,7 @@ import {
   signOut as firebaseSignOut 
 } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType, messaging, getToken, onMessage } from '../firebase';
 
 export type Role = 'coach' | 'parent' | 'player' | null;
 
@@ -21,9 +21,11 @@ export interface UserProfile {
   photoURL: string;
   role: Role;
   teamId?: string;
+  joinedTeams?: { teamId: string; role: Role; teamName: string }[];
   subscriptionStatus?: 'active' | 'inactive';
   trialEndDate?: string;
   stripeCustomerId?: string;
+  fcmToken?: string;
 }
 
 interface AuthContextType {
@@ -36,7 +38,9 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  switchTeam: (teamId: string) => Promise<void>;
   deleteProfile: () => Promise<void>;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -49,8 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isSubscribed = !!(
     profile?.subscriptionStatus === 'active' || 
-    profile?.email === 'chrisjeal9@gmail.com' ||
+    user?.email === 'chrisjeal9@gmail.com' ||
     (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date())
+  );
+
+  const isAdmin = !!(
+    user?.email === 'chrisjeal9@gmail.com' || 
+    user?.uid === 'V45Buf6eA5ggg2JUFShJpj48y2y2'
   );
 
   if (error) {
@@ -160,6 +169,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Handle FCM Token Registration
+  useEffect(() => {
+    if (!user || !messaging) return;
+
+    const requestPermission = async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          // Get token
+          const token = await getToken(messaging, {
+            vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY
+          });
+          
+          if (token) {
+            console.log('[AuthContext] FCM Token:', token);
+            // Save token to user profile if it's different
+            if (profile && profile.fcmToken !== token) {
+              await updateProfile({ fcmToken: token });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[AuthContext] Error requesting notification permission:', err);
+      }
+    };
+
+    requestPermission();
+
+    // Listen for foreground messages
+    const unsubscribeMessage = onMessage(messaging, (payload) => {
+      console.log('[AuthContext] Foreground message received:', payload);
+      // You could show a toast here if you want
+    });
+
+    return () => unsubscribeMessage();
+  }, [user, messaging, profile?.uid]);
+
   const signInWithEmail = async (email: string, password: string) => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
@@ -212,6 +258,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const switchTeam = async (teamId: string) => {
+    if (!user || !profile?.joinedTeams) return;
+    const team = profile.joinedTeams.find(t => t.teamId === teamId);
+    if (!team) return;
+
+    try {
+      const docRef = doc(db, 'users', user.uid);
+      await setDoc(docRef, { 
+        teamId: team.teamId, 
+        role: team.role 
+      }, { merge: true });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
   const deleteProfile = async () => {
     if (!user) return;
     try {
@@ -227,7 +289,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isSubscribed, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, updateProfile, deleteProfile }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      profile, 
+      loading, 
+      isSubscribed, 
+      isAdmin,
+      signInWithEmail, 
+      signUpWithEmail, 
+      signInWithGoogle, 
+      signOut, 
+      updateProfile, 
+      switchTeam,
+      deleteProfile 
+    }}>
       {children}
     </AuthContext.Provider>
   );

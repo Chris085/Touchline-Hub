@@ -17,6 +17,8 @@ interface Note {
   createdAt: any;
 }
 
+import { ConfirmModal } from '../components/ConfirmModal';
+
 export function Notes() {
   const { profile } = useAuth();
   const [notes, setNotes] = useState<Note[]>([]);
@@ -32,9 +34,28 @@ export function Notes() {
   const [filterType, setFilterType] = useState<'all' | 'match' | 'training' | 'general'>('all');
   const [filterPlayer, setFilterPlayer] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
 
   useEffect(() => {
     if (!profile?.teamId) return;
+
+    const isAdmin = profile?.email === 'chrisjeal9@gmail.com';
+    if (profile.role !== 'coach' && !isAdmin) {
+      setLoading(false);
+      return;
+    }
 
     const notesRef = collection(db, 'notes');
     const q = query(
@@ -92,12 +113,19 @@ export function Notes() {
   };
 
   const handleDeleteNote = async (id: string) => {
-    if (!window.confirm('Are you sure you want to delete this note?')) return;
-    try {
-      await deleteDoc(doc(db, 'notes', id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `notes/${id}`);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Note',
+      message: 'Are you sure you want to delete this note?',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'notes', id));
+          closeConfirmModal();
+        } catch (error) {
+          handleFirestoreError(error, OperationType.DELETE, `notes/${id}`);
+        }
+      }
+    });
   };
 
   const togglePlayerTag = (playerId: string) => {
@@ -128,6 +156,18 @@ export function Notes() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (profile?.role !== 'coach' && profile?.email !== 'chrisjeal9@gmail.com') {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center space-y-4">
+          <FileText className="mx-auto text-slate-700" size={48} />
+          <h2 className="text-xl font-bold text-white">Access Denied</h2>
+          <p className="text-slate-400">Only coaches can view and manage team notes.</p>
+        </div>
       </div>
     );
   }
@@ -330,6 +370,14 @@ export function Notes() {
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+      />
     </div>
   );
 }

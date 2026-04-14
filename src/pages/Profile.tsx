@@ -15,9 +15,11 @@ import {
   Settings,
   LogOut,
   UserX,
-  Calendar
+  Calendar,
+  Plus,
+  RefreshCw
 } from 'lucide-react';
-import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, getDoc, getDocs, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
@@ -43,12 +45,15 @@ interface ActivityItem {
 }
 
 export function Profile() {
-  const { profile, signOut, deleteProfile, isSubscribed } = useAuth();
+  const { profile, signOut, deleteProfile, isSubscribed, isAdmin, switchTeam, updateProfile } = useAuth();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'activity' | 'season'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'activity' | 'season' | 'teams'>('overview');
   const [teamData, setTeamData] = useState<any>(null);
+  const [joinCode, setJoinCode] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
+  const [joinError, setJoinError] = useState('');
   const [seasonSettings, setSeasonSettings] = useState({
     seasonStart: '',
     seasonEnd: '',
@@ -117,7 +122,7 @@ export function Profile() {
         id: doc.id,
         type: 'news',
         title: 'New Post',
-        description: doc.data().content.substring(0, 50) + '...',
+        description: (doc.data().content || '').substring(0, 50) + '...',
         timestamp: doc.data().createdAt,
         icon: Newspaper
       }));
@@ -132,7 +137,7 @@ export function Profile() {
         id: doc.id,
         type: 'chat',
         title: `Message from ${doc.data().senderName}`,
-        description: doc.data().content.substring(0, 50) + '...',
+        description: (doc.data().content || '').substring(0, 50) + '...',
         timestamp: doc.data().createdAt,
         icon: MessageSquare
       }));
@@ -205,10 +210,19 @@ export function Profile() {
     if (!confirmRemove.userId) return;
     try {
       const userRef = doc(db, 'users', confirmRemove.userId);
-      await updateDoc(userRef, {
-        teamId: null,
-        role: null // Reset role so they have to re-onboard
-      });
+      const userSnap = await getDoc(userRef);
+      
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const updatedJoinedTeams = (userData.joinedTeams || []).filter((t: any) => t.teamId !== profile?.teamId);
+        
+        await updateDoc(userRef, {
+          teamId: updatedJoinedTeams.length > 0 ? updatedJoinedTeams[0].teamId : null,
+          role: updatedJoinedTeams.length > 0 ? updatedJoinedTeams[0].role : null,
+          joinedTeams: updatedJoinedTeams
+        });
+      }
+      
       setConfirmRemove({ isOpen: false, userId: '', name: '' });
     } catch (error) {
       console.error('Error removing member:', error);
@@ -219,9 +233,19 @@ export function Profile() {
   const handleChangeRole = async (userId: string, newRole: string) => {
     try {
       const userRef = doc(db, 'users', userId);
-      await updateDoc(userRef, {
-        role: newRole
-      });
+      const userSnap = await getDoc(userRef);
+      
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const updatedJoinedTeams = (userData.joinedTeams || []).map((t: any) => 
+          t.teamId === profile?.teamId ? { ...t, role: newRole } : t
+        );
+        
+        await updateDoc(userRef, {
+          role: newRole,
+          joinedTeams: updatedJoinedTeams
+        });
+      }
     } catch (error) {
       console.error('Error changing role:', error);
       alert('Failed to change role. Please try again.');
@@ -246,13 +270,102 @@ export function Profile() {
     }
   };
 
+  const handleJoinTeam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joinCode.trim() || !profile) return;
+    
+    setIsJoining(true);
+    setJoinError('');
+    
+    try {
+      const code = joinCode.trim().toUpperCase();
+      const teamsRef = collection(db, 'teams');
+      const q = query(teamsRef, where('code', '==', code));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        // Try player code
+        if (code.startsWith('P-')) {
+          const playersRef = collection(db, 'players');
+          const pq = query(playersRef, where('inviteCode', '==', code));
+          const pSnapshot = await getDocs(pq);
+          
+          if (pSnapshot.empty) {
+            setJoinError('Invalid invite code.');
+            setIsJoining(false);
+            return;
+          }
+
+          const playerDoc = pSnapshot.docs[0];
+          const playerData = playerDoc.data();
+          
+          // Get team name
+          const teamRef = doc(db, 'teams', playerData.teamId);
+          const teamSnap = await getDoc(teamRef);
+          const teamName = teamSnap.exists() ? teamSnap.data().name : 'Unknown Team';
+
+          // Add to player
+          await updateDoc(doc(db, 'players', playerDoc.id), {
+            parentIds: arrayUnion(profile.uid)
+          });
+
+          const newTeam = { teamId: playerData.teamId, role: 'parent' as const, teamName };
+          const currentTeams = profile.joinedTeams || [];
+          
+          if (currentTeams.some(t => t.teamId === newTeam.teamId)) {
+            setJoinError('You are already a member of this team.');
+            setIsJoining(false);
+            return;
+          }
+
+          await updateProfile({
+            joinedTeams: [...currentTeams, newTeam],
+            teamId: newTeam.teamId,
+            role: newTeam.role
+          });
+          
+          setJoinCode('');
+          alert(`Successfully joined ${teamName}!`);
+        } else {
+          setJoinError('Invalid team code.');
+        }
+      } else {
+        const teamDoc = querySnapshot.docs[0];
+        const teamData = teamDoc.data();
+        
+        const newTeam = { teamId: teamDoc.id, role: 'parent' as const, teamName: teamData.name };
+        const currentTeams = profile.joinedTeams || [];
+        
+        if (currentTeams.some(t => t.teamId === newTeam.teamId)) {
+          setJoinError('You are already a member of this team.');
+          setIsJoining(false);
+          return;
+        }
+
+        await updateProfile({
+          joinedTeams: [...currentTeams, newTeam],
+          teamId: newTeam.teamId,
+          role: newTeam.role
+        });
+        
+        setJoinCode('');
+        alert(`Successfully joined ${teamData.name}!`);
+      }
+    } catch (err) {
+      console.error('Error joining team:', err);
+      setJoinError('Failed to join team. Please try again.');
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
   const isSubscriptionOwner = !!profile?.stripeCustomerId;
-  const isCoach = profile?.role === 'coach';
+  const isCoach = profile?.role === 'coach' || isAdmin;
 
   // Filter team members based on role
   const visibleMembers = teamMembers.filter(m => {
     if (m.uid === profile?.uid) return false; // Don't show self in list
-    if (isSubscriptionOwner) return true; // Owner sees everyone
+    if (isSubscriptionOwner || isAdmin) return true; // Owner and Admin see everyone
     if (isCoach) return m.role === 'parent'; // Coach sees parents
     return false; // Parents see no one by default in this view
   });
@@ -273,11 +386,11 @@ export function Profile() {
           </div>
           
           <div className="text-center sm:text-left flex-1">
-            <h1 className="text-2xl sm:text-3xl font-black text-white mb-1">{profile?.displayName || 'User'}</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-white mb-1 break-words">{profile?.displayName || 'User'}</h1>
             <div className="flex flex-wrap justify-center sm:justify-start gap-3 items-center">
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold uppercase tracking-wider border border-slate-700">
                 <Shield size={12} className={isCoach ? "text-green-400" : "text-blue-400"} />
-                {profile?.role}
+                {isAdmin ? 'Admin' : profile?.role}
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold uppercase tracking-wider border border-slate-700">
                 <Mail size={12} className="text-slate-500" />
@@ -334,6 +447,14 @@ export function Profile() {
             Season Setup
           </button>
         )}
+        <button
+          onClick={() => setActiveTab('teams')}
+          className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+            activeTab === 'teams' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          My Teams
+        </button>
         <button
           onClick={() => setActiveTab('activity')}
           className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
@@ -486,20 +607,20 @@ export function Profile() {
                   {visibleMembers.map((member) => (
                     <div 
                       key={member.uid}
-                      className="p-4 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-between group hover:border-slate-700 transition-all"
+                      className="p-4 bg-slate-900 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-slate-700 transition-all"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 overflow-hidden border border-slate-700">
+                        <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-500 overflow-hidden border border-slate-700 flex-shrink-0">
                           {member.photoURL ? (
                             <img src={member.photoURL} alt={member.displayName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <UserIcon size={20} />
                           )}
                         </div>
-                        <div>
-                          <p className="font-bold text-white">{member.displayName || 'Anonymous'}</p>
-                          <div className="flex items-center gap-2">
-                            {isSubscriptionOwner ? (
+                        <div className="min-w-0">
+                          <p className="font-bold text-white truncate">{member.displayName || 'Anonymous'}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {(isSubscriptionOwner || isAdmin) ? (
                               <select
                                 value={member.role}
                                 onChange={(e) => handleChangeRole(member.uid, e.target.value)}
@@ -512,36 +633,40 @@ export function Profile() {
                             ) : (
                               <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">{member.role}</span>
                             )}
-                            <span className="w-1 h-1 bg-slate-700 rounded-full"></span>
-                            <span className="text-[10px] text-slate-500">{member.email}</span>
+                            <span className="w-1 h-1 bg-slate-700 rounded-full hidden sm:block"></span>
+                            <span className="text-[10px] text-slate-500 truncate w-full sm:w-auto">{member.email}</span>
                           </div>
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-3">
-                        {member.stripeCustomerId && (
-                          <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 text-[10px] font-black uppercase tracking-wider">
-                            Owner
-                          </span>
-                        )}
-                        {member.subscriptionStatus === 'active' && (
-                          <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[10px] font-black uppercase tracking-wider">
-                            Active
-                          </span>
-                        )}
-                        {isSubscriptionOwner && (
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handleRemoveMember(member.uid, member.displayName);
-                            }}
-                            className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all opacity-0 group-hover:opacity-100"
-                            title="Remove from Team"
-                          >
-                            <UserX size={16} />
-                          </button>
-                        )}
-                        <ChevronRight size={18} className="text-slate-700 group-hover:text-slate-400 transition-colors" />
+                      <div className="flex items-center justify-between sm:justify-end gap-3 border-t border-slate-800 pt-3 sm:border-none sm:pt-0">
+                        <div className="flex items-center gap-2">
+                          {member.stripeCustomerId && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 text-[10px] font-black uppercase tracking-wider">
+                              Owner
+                            </span>
+                          )}
+                          {member.subscriptionStatus === 'active' && (
+                            <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[10px] font-black uppercase tracking-wider">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {(isSubscriptionOwner || isAdmin) && (
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleRemoveMember(member.uid, member.displayName);
+                              }}
+                              className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all sm:opacity-0 sm:group-hover:opacity-100"
+                              title="Remove from Team"
+                            >
+                              <UserX size={16} />
+                            </button>
+                          )}
+                          <ChevronRight size={18} className="text-slate-700 group-hover:text-slate-400 transition-colors" />
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -693,6 +818,99 @@ export function Profile() {
                   <p className="text-slate-500 font-medium">No recent activity found.</p>
                 </div>
               )}
+            </motion.div>
+          )}
+
+          {activeTab === 'teams' && (
+            <motion.div
+              key="teams"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-bold text-white">Join Another Team</h3>
+                  <Plus size={20} className="text-slate-500" />
+                </div>
+
+                <form onSubmit={handleJoinTeam} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Invite Code</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={joinCode}
+                        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                        placeholder="P-XXXXXX or 000000"
+                        className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all uppercase font-mono"
+                        maxLength={8}
+                      />
+                      <button
+                        type="submit"
+                        disabled={isJoining || !joinCode.trim()}
+                        className="px-6 bg-green-500 hover:bg-green-400 disabled:bg-slate-700 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                      >
+                        {isJoining ? (
+                          <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          'Join'
+                        )}
+                      </button>
+                    </div>
+                    {joinError && <p className="text-red-400 text-[10px] font-bold uppercase tracking-widest mt-2">{joinError}</p>}
+                  </div>
+                </form>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-white">My Teams</h3>
+                <div className="grid grid-cols-1 gap-3">
+                  {(profile?.joinedTeams || []).map((team) => (
+                    <div 
+                      key={team.teamId}
+                      className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${
+                        profile?.teamId === team.teamId 
+                          ? 'bg-green-500/10 border-green-500/50' 
+                          : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 ${
+                          profile?.teamId === team.teamId ? 'bg-green-500/20 border-green-500' : 'bg-slate-800 border-slate-700'
+                        }`}>
+                          <Users size={20} className={profile?.teamId === team.teamId ? 'text-green-400' : 'text-slate-500'} />
+                        </div>
+                        <div>
+                          <p className="font-bold text-white">{team.teamName}</p>
+                          <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">{team.role}</p>
+                        </div>
+                      </div>
+
+                      {profile?.teamId === team.teamId ? (
+                        <div className="px-3 py-1 rounded-full bg-green-500 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-lg shadow-green-500/20">
+                          Active
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => switchTeam(team.teamId)}
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-all text-[10px] font-bold uppercase tracking-widest border border-slate-700"
+                        >
+                          <RefreshCw size={14} />
+                          Switch
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {(!profile?.joinedTeams || profile.joinedTeams.length === 0) && (
+                    <div className="p-12 text-center bg-slate-900 rounded-3xl border border-slate-800 border-dashed">
+                      <Users size={40} className="mx-auto text-slate-700 mb-4" />
+                      <p className="text-slate-500 font-medium">You haven't joined any teams yet.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

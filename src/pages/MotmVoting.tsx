@@ -7,7 +7,7 @@ import { motion } from 'motion/react';
 import { format } from 'date-fns';
 
 export function MotmVoting() {
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
   const [matches, setMatches] = useState<any[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
   const [votes, setVotes] = useState<any[]>([]);
@@ -23,7 +23,11 @@ export function MotmVoting() {
     
     const unsubMatches = onSnapshot(qMatches, (snapshot) => {
       const matchesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      matchesData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Newest first
+      matchesData.sort((a, b) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        return dateB - dateA; // Newest first
+      });
       setMatches(matchesData);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'matches'));
 
@@ -44,7 +48,11 @@ export function MotmVoting() {
     if (!selectedMatch || !profile?.uid) return;
 
     const votesRef = collection(db, 'motmVotes');
-    const qVotes = query(votesRef, where('matchId', '==', selectedMatch.id));
+    const qVotes = query(
+      votesRef, 
+      where('matchId', '==', selectedMatch.id),
+      where('teamId', '==', profile.teamId)
+    );
     
     const unsubVotes = onSnapshot(qVotes, (snapshot) => {
       const votesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
@@ -76,7 +84,8 @@ export function MotmVoting() {
       await addDoc(collection(db, 'motmVotes'), {
         matchId: selectedMatch.id,
         playerId,
-        parentId: profile.uid
+        parentId: profile.uid,
+        teamId: profile.teamId
       });
       setHasVoted(true);
     } catch (error) {
@@ -86,6 +95,20 @@ export function MotmVoting() {
 
   const getVoteCount = (playerId: string) => {
     return votes.filter(v => v.playerId === playerId).length;
+  };
+
+  const finalizeParentVote = async (playerId: string, playerName: string) => {
+    if (!selectedMatch) return;
+    try {
+      await updateDoc(doc(db, 'matches', selectedMatch.id), {
+        parentPotmId: playerId,
+        parentPotmName: playerName,
+        isPotmVotingOpen: false
+      });
+      alert(`Parent's POTM finalized: ${playerName}`);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `matches/${selectedMatch.id}`);
+    }
   };
 
   if (matches.length === 0) {
@@ -133,7 +156,7 @@ export function MotmVoting() {
                   <h4 className="text-white font-bold text-sm leading-tight line-clamp-1">vs {match.opponent}</h4>
                   <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
                     <Clock size={10} />
-                    {format(new Date(match.date), 'MMM d, yyyy')}
+                    {match.date ? format(new Date(match.date), 'MMM d, yyyy') : 'Postponed TBA'}
                   </p>
                 </div>
               </div>
@@ -150,7 +173,7 @@ export function MotmVoting() {
                   </span>
                 )}
                 
-                {profile?.role === 'coach' && (
+                { (profile?.role === 'coach' || isAdmin) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); toggleVoting(match.id, !!match.isPotmVotingOpen); }}
                     className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg transition-colors ${
@@ -196,10 +219,10 @@ export function MotmVoting() {
                   Voting Closed
                 </span>
               )}
-              <h2 className="text-3xl font-black text-white tracking-tight">vs {selectedMatch.opponent}</h2>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight break-words">vs {selectedMatch.opponent}</h2>
               <p className="text-slate-400 mt-1 flex items-center gap-2 text-sm">
                 <Clock size={14} />
-                {format(new Date(selectedMatch.date), 'MMM d, yyyy')}
+                {selectedMatch.date ? format(new Date(selectedMatch.date), 'MMM d, yyyy') : 'Postponed TBA'}
               </p>
             </div>
           </div>
@@ -232,7 +255,7 @@ export function MotmVoting() {
              <div className="text-center py-8">
                <p className="text-slate-400">Voting is currently closed for this match.</p>
              </div>
-          ) : (
+          ) : (profile?.role === 'coach' || isAdmin) ? (
             // Coach View: Show Results
             <div>
               <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Current Standings</h3>
@@ -247,23 +270,33 @@ export function MotmVoting() {
                     .sort((a, b) => b.votes - a.votes)
                     .filter(p => p.votes > 0)
                     .map((player, idx) => (
-                      <div key={player.id} className="bg-slate-800/50 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                      <div key={player.id} className="bg-slate-800/50 border border-slate-800 rounded-xl p-4 flex items-center justify-between group">
                         <div className="flex items-center gap-4">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${idx === 0 ? 'bg-yellow-500 text-slate-950' : 'bg-slate-700 text-slate-400'}`}>
                             {idx + 1}
                           </div>
                           <span className="text-lg font-medium text-white">{player.name}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl font-black text-white">{player.votes}</span>
-                          <span className="text-xs text-slate-500 uppercase tracking-wider">Votes</span>
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-black text-white">{player.votes}</span>
+                            <span className="text-xs text-slate-500 uppercase tracking-wider">Votes</span>
+                          </div>
+                          {selectedMatch.isPotmVotingOpen && (
+                            <button
+                              onClick={() => finalizeParentVote(player.id, player.name)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity bg-yellow-500 text-slate-950 text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider"
+                            >
+                              Finalize
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
                 </div>
               )}
             </div>
-          )}
+          ) : null}
         </motion.div>
       )}
     </div>

@@ -21,6 +21,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { triggerNotification } from '../lib/notifications';
 
 interface ChatMessage {
   id: string;
@@ -99,6 +100,15 @@ export function TeamChat() {
         content: messageContent,
         createdAt: new Date().toISOString()
       });
+
+      // Trigger Notification
+      await triggerNotification({
+        teamId: profile.teamId,
+        title: `New Message from ${profile.displayName}`,
+        body: messageContent.slice(0, 100) + (messageContent.length > 100 ? '...' : ''),
+        data: { type: 'chat_message' }
+      });
+
       scrollToBottom();
     } catch (error) {
       console.error("Error sending message:", error);

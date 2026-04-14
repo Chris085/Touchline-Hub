@@ -24,6 +24,8 @@ import { Notes } from './pages/Notes';
 import { Features } from './pages/Features';
 import { Stats } from './pages/Stats';
 import { Profile } from './pages/Profile';
+import { Payments } from './pages/Payments';
+import { Learning } from './pages/Learning';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -81,7 +83,9 @@ function AppRoutes() {
         <Route path="motm" element={<MotmVoting />} />
         <Route path="notes" element={<Notes />} />
         <Route path="stats" element={<Stats />} />
+        <Route path="payments" element={<Payments />} />
         <Route path="features" element={<Features />} />
+        <Route path="learning" element={<Learning />} />
         <Route path="profile" element={<Profile />} />
         <Route path="admin" element={<Admin />} />
       </Route>

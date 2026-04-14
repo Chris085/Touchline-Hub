@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { collection, query, where, onSnapshot, addDoc, doc, setDoc, deleteDoc, orderBy, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { BulkAddModal } from '../components/BulkAddModal';
 import { format } from 'date-fns';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Calendar as CalendarIcon, MapPin, Clock, Plus, Trash2, Check, X, HelpCircle, ChevronRight, ChevronDown, ChevronUp, Pencil, Users, Trophy, Activity, LayoutGrid, Zap, BarChart3 } from 'lucide-react';
+import { Calendar as CalendarIcon, MapPin, Clock, Plus, Trash2, Check, X, HelpCircle, ChevronRight, ChevronDown, ChevronUp, Pencil, Users, Trophy, Activity, LayoutGrid, Zap, BarChart3, MoreVertical } from 'lucide-react';
 import { motion } from 'motion/react';
+import { triggerNotification } from '../lib/notifications';
 
 interface Match {
   id: string;
@@ -16,10 +18,11 @@ interface Match {
   date: string;
   location?: string;
   postcode?: string;
-  status: 'scheduled' | 'in-progress' | 'completed';
+  status: 'scheduled' | 'in-progress' | 'completed' | 'postponed';
   scoreUs?: number;
   scoreThem?: number;
   season?: string;
+  postponedNote?: string;
 }
 
 interface Availability {
@@ -33,14 +36,30 @@ interface Availability {
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Dashboard() {
-  const { profile, isSubscribed } = useAuth();
+  const { profile, isSubscribed, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [matches, setMatches] = useState<Match[]>([]);
   const [availabilities, setAvailabilities] = useState<Record<string, Availability>>({});
   const [players, setPlayers] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [teamData, setTeamData] = useState<any>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (showMenu && menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [showMenu]);
 
   useEffect(() => {
     if (!profile?.teamId) return;
@@ -63,8 +82,9 @@ export function Dashboard() {
     }
   }, [searchParams, setSearchParams]);
 
-  const isAdmin = profile?.email === 'chrisjeal9@gmail.com' || profile?.email === 'cjeal85@gmail.com';
+  const isCoach = profile?.role === 'coach' || isAdmin;
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showBulkAddModal, setShowBulkAddModal] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [filter, setFilter] = useState<'all' | 'match' | 'training'>('all');
   const [newMatch, setNewMatch] = useState<Partial<Match>>({
@@ -101,13 +121,17 @@ export function Dashboard() {
     const unsubMatches = onSnapshot(qMatches, (snapshot) => {
       const matchesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Match));
       // Sort client-side to avoid needing a composite index initially
-      matchesData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      matchesData.sort((a, b) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        return dateA - dateB;
+      });
       setMatches(matchesData);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'matches'));
 
     // Fetch players for this parent or all players for coach
     const playersRef = collection(db, 'players');
-    const qPlayers = profile.role === 'coach' 
+    const qPlayers = isCoach 
       ? query(playersRef, where('teamId', '==', profile.teamId))
       : query(playersRef, where('parentIds', 'array-contains', profile.uid));
 
@@ -165,6 +189,15 @@ export function Dashboard() {
           season: teamData?.seasonTag || null
         });
       }
+
+      // Trigger Notification
+      await triggerNotification({
+        teamId: profile.teamId,
+        title: `New ${newMatch.type === 'match' ? 'Match' : 'Training'} Scheduled`,
+        body: `${newMatch.type === 'match' ? `vs ${newMatch.opponent}` : 'New training session'} on ${format(new Date(newMatch.date!), 'MMM d, h:mm a')}`,
+        data: { type: 'new_event' }
+      });
+
       setShowAddModal(false);
       setNewMatch({ type: 'match', matchCategory: 'league', status: 'scheduled', date: new Date().toISOString().slice(0, 16) });
       setIsRecurring(false);
@@ -236,6 +269,12 @@ export function Dashboard() {
 
   // Group matches by month
   const groupedMatches = filteredMatches.reduce((groups, match) => {
+    if (!match.date) {
+      const key = 'Postponed / TBA';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(match);
+      return groups;
+    }
     const monthYear = format(new Date(match.date), 'MMMM yyyy');
     if (!groups[monthYear]) {
       groups[monthYear] = [];
@@ -256,7 +295,7 @@ export function Dashboard() {
     setExpandedMonths(prev => ({ ...prev, [month]: !prev[month] }));
   };
 
-  const nextMatch = matches.find(m => m.type === 'match' && new Date(m.date) > new Date());
+  const nextMatch = matches.find(m => m.type === 'match' && m.status !== 'postponed' && m.date && new Date(m.date) > new Date());
 
   return (
     <div className="space-y-8 relative pb-20">
@@ -278,7 +317,7 @@ export function Dashboard() {
           <h1 className="text-4xl font-black text-chalk-white uppercase tracking-tighter italic font-display leading-none">Matchday</h1>
         </div>
         <div className="flex items-center gap-2">
-          {profile?.role === 'coach' && !isSubscribed && (
+          {isCoach && !isSubscribed && !isAdmin && (
             <button
               onClick={() => navigate('/upgrade')}
               className="px-4 py-3 bg-green-500/10 border border-green-500/20 text-green-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-green-500/20 transition-all flex items-center gap-2 group"
@@ -317,7 +356,7 @@ export function Dashboard() {
           <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Upcoming</span>
           <div className="flex items-end justify-between mt-2">
             <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
-              {matches.filter(m => new Date(m.date) > new Date()).length}
+              {matches.filter(m => m.status !== 'postponed' && m.date && new Date(m.date) > new Date()).length}
             </span>
             <CalendarIcon size={20} className="text-pitch-green/40" />
           </div>
@@ -326,7 +365,7 @@ export function Dashboard() {
           <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Next Training</span>
           <div className="flex items-end justify-between mt-2">
             <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
-              {matches.filter(m => m.type === 'training' && new Date(m.date) > new Date()).length > 0 ? '1' : '0'}
+              {matches.filter(m => m.type === 'training' && m.status !== 'postponed' && m.date && new Date(m.date) > new Date()).length > 0 ? '1' : '0'}
             </span>
             <Activity size={20} className="text-blue-500/40" />
           </div>
@@ -362,15 +401,15 @@ export function Dashboard() {
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
                   <span className="bg-pitch-green text-pitch-dark px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest font-display italic">Next Match</span>
-                  <span className="text-chalk-white/40 text-[10px] font-black uppercase tracking-widest font-display italic">{format(new Date(nextMatch.date), 'EEEE, MMMM do')}</span>
+                  <span className="text-chalk-white/40 text-[10px] font-black uppercase tracking-widest font-display italic">{nextMatch.date ? format(new Date(nextMatch.date), 'EEEE, MMMM do') : 'TBA'}</span>
                 </div>
-                <h2 className="text-5xl font-black text-chalk-white uppercase italic font-display tracking-tighter leading-none">
+                <h2 className="text-3xl sm:text-4xl md:text-5xl font-black text-chalk-white uppercase italic font-display tracking-tighter leading-none break-words">
                   vs {nextMatch.opponent}
                 </h2>
                 <div className="flex items-center gap-6 text-chalk-white/60 text-xs font-bold uppercase tracking-widest font-display italic">
                   <div className="flex items-center gap-2">
                     <Clock size={16} className="text-pitch-green" />
-                    <span>{format(new Date(nextMatch.date), 'h:mm a')}</span>
+                    <span>{nextMatch.date ? format(new Date(nextMatch.date), 'h:mm a') : 'TBA'}</span>
                   </div>
                   {nextMatch.location && (
                     <div className="flex items-center gap-2">
@@ -397,8 +436,8 @@ export function Dashboard() {
         </motion.div>
       )}
 
-      <div className="flex items-center justify-between gap-4 mb-8 relative z-10">
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 hide-scrollbar flex-1">
+      <div className="flex items-center justify-between gap-4 mb-8 relative z-40">
+        <div className="flex gap-2 overflow-x-auto hide-scrollbar flex-1 min-w-0 pb-2 sm:pb-0">
           <button 
             onClick={() => setFilter('all')} 
             className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all font-display italic ${filter === 'all' ? 'bg-chalk-white text-pitch-dark shadow-lg' : 'bg-chalk-white/5 text-chalk-white/40 hover:bg-chalk-white/10'}`}
@@ -418,20 +457,65 @@ export function Dashboard() {
             Training
           </button>
         </div>
-        {(profile?.role === 'coach' || isAdmin) && (
-          <button 
-            onClick={() => {
-              if (!isSubscribed) {
-                navigate('/upgrade');
-                return;
-              }
-              setShowAddModal(true);
-            }}
-            className={`p-2.5 ${isSubscribed ? 'bg-pitch-green shadow-pitch-green/30' : 'bg-slate-700 shadow-none'} text-pitch-dark rounded-xl shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:scale-105 active:scale-95 transition-all flex-shrink-0`}
-            title={isSubscribed ? "Add Entry" : "Upgrade to Add"}
-          >
-            {isSubscribed ? <Plus size={20} strokeWidth={3} /> : <Zap size={18} className="text-chalk-white/60" />}
-          </button>
+        {isCoach && (
+          <div className="relative shrink-0">
+            {/* Desktop View */}
+            <div className="hidden sm:flex gap-2">
+              <button 
+                onClick={() => {
+                  if (!isSubscribed) {
+                    navigate('/upgrade');
+                    return;
+                  }
+                  setShowBulkAddModal(true);
+                }}
+                className={`p-2.5 ${isSubscribed ? 'bg-blue-500 shadow-blue-500/30' : 'bg-slate-700 shadow-none'} text-white rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-4`}
+                title={isSubscribed ? "Bulk Add Results" : "Upgrade to Add"}
+              >
+                <Trophy size={18} strokeWidth={3} />
+                <span className="text-[10px] font-black uppercase tracking-widest font-display italic">Bulk Add</span>
+              </button>
+              <button 
+                onClick={() => {
+                  if (!isSubscribed) {
+                    navigate('/upgrade');
+                    return;
+                  }
+                  setShowAddModal(true);
+                }}
+                className={`p-2.5 ${isSubscribed ? 'bg-pitch-green shadow-pitch-green/30' : 'bg-slate-700 shadow-none'} text-pitch-dark rounded-xl shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:scale-105 active:scale-95 transition-all`}
+                title={isSubscribed ? "Add Entry" : "Upgrade to Add"}
+              >
+                {isSubscribed ? <Plus size={20} strokeWidth={3} /> : <Zap size={18} className="text-chalk-white/60" />}
+              </button>
+            </div>
+
+            {/* Mobile Burger Menu */}
+            <div className="sm:hidden relative" ref={menuRef}>
+              <button 
+                onClick={() => setShowMenu(!showMenu)}
+                className="p-2.5 bg-pitch-dark/50 border border-chalk-white/10 rounded-xl text-chalk-white"
+              >
+                <Plus size={20} />
+              </button>
+              {showMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-pitch-dark border border-chalk-white/10 rounded-xl shadow-xl z-50 p-2">
+                  <button 
+                    onClick={() => { setShowMenu(false); if (!isSubscribed) { navigate('/upgrade'); } else { setShowBulkAddModal(true); }}}
+                    className="w-full flex items-center gap-3 p-3 text-sm text-chalk-white hover:bg-chalk-white/5 rounded-lg"
+                  >
+                    <Trophy size={16} /> Bulk Add
+                  </button>
+                  <button 
+                    onClick={() => { setShowMenu(false); if (!isSubscribed) { navigate('/upgrade'); } else { setShowAddModal(true); }}}
+                    className="w-full flex items-center gap-3 p-3 text-sm text-chalk-white hover:bg-chalk-white/5 rounded-lg"
+                  >
+                    <Plus size={16} /> Add Entry
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
@@ -444,7 +528,7 @@ export function Dashboard() {
             </div>
             <h3 className="text-xl font-black text-chalk-white mb-2 uppercase italic font-display tracking-tight">No events found</h3>
             <p className="text-chalk-white/40 text-xs font-bold uppercase tracking-widest">
-              {profile?.role === 'coach' 
+              {isCoach 
                 ? "Time to schedule the next training session or match!" 
                 : "Check back later for the schedule."}
             </p>
@@ -452,7 +536,13 @@ export function Dashboard() {
         </div>
       ) : (
         <div className="space-y-8 relative z-10">
-          {Object.entries(groupedMatches).map(([month, monthMatches]: [string, Match[]]) => (
+          {Object.entries(groupedMatches)
+            .sort(([a], [b]) => {
+              if (a === 'Postponed / TBA') return 1;
+              if (b === 'Postponed / TBA') return -1;
+              return new Date(b).getTime() - new Date(a).getTime();
+            })
+            .map(([month, monthMatches]: [string, Match[]]) => (
             <div key={month} className="space-y-4">
               <button
                 onClick={() => toggleMonth(month)}
@@ -481,9 +571,9 @@ export function Dashboard() {
                       onClick={() => navigate(`/schedule/${match.id}`)}
                     >
                       {/* Card Header */}
-                      <div className="flex justify-between items-start mb-6">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-3">
+                      <div className="flex justify-between items-start gap-4 mb-6">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-3">
                             <span className={`text-[8px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-full border font-display italic ${match.type === 'match' ? 'bg-pitch-green/10 text-pitch-green border-pitch-green/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
                               {match.type}
                             </span>
@@ -498,12 +588,12 @@ export function Dashboard() {
                               </span>
                             )}
                           </div>
-                          <h3 className="text-xl font-black text-chalk-white group-hover:text-pitch-green transition-colors leading-tight uppercase italic font-display tracking-tighter">
+                          <h3 className="text-xl font-black text-chalk-white group-hover:text-pitch-green transition-colors leading-tight uppercase italic font-display tracking-tighter break-words">
                             {match.type === 'match' ? `vs ${match.opponent}` : 'Training'}
                           </h3>
                         </div>
-                        {profile?.role === 'coach' && (
-                          <div className="flex items-center gap-1.5">
+                        {isCoach && (
+                          <div className="flex items-center gap-1.5 shrink-0">
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleEditMatch(match); }}
                               className="text-chalk-white/20 hover:text-pitch-green transition-colors p-2.5 bg-pitch-dark/40 rounded-xl border border-chalk-white/5"
@@ -527,8 +617,17 @@ export function Dashboard() {
                             <Clock size={14} className="text-pitch-green" />
                           </div>
                           <div className="flex flex-col">
-                            <span className="text-chalk-white/60">{format(new Date(match.date), 'MMM d, yyyy')}</span>
-                            <span>{format(new Date(match.date), 'h:mm a')}</span>
+                            {match.status === 'postponed' && !match.date ? (
+                              <span className="text-red-400">Postponed TBA</span>
+                            ) : (
+                              <>
+                                <span className={match.status === 'postponed' ? 'text-red-400' : 'text-chalk-white/60'}>
+                                  {match.date ? format(new Date(match.date), 'MMM d, yyyy') : 'TBA'}
+                                  {match.status === 'postponed' && ' (Postponed)'}
+                                </span>
+                                <span>{match.date ? format(new Date(match.date), 'h:mm a') : 'TBA'}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                         {match.location && (
@@ -553,23 +652,23 @@ export function Dashboard() {
                               const status = availabilities[`${match.id}_${player.id}`]?.status;
                               return (
                                 <div key={player.id} className="flex items-center justify-between gap-4">
-                                  <span className="text-xs font-black text-chalk-white/80 uppercase tracking-tight truncate italic font-display">{player.name}</span>
+                                  <span className="text-xs font-black text-chalk-white/80 uppercase tracking-tight break-words italic font-display">{player.name}</span>
                                   <div className="flex gap-1 shrink-0">
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'going'); }}
-                                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                                     >
                                       <Check size={16} strokeWidth={4} />
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'maybe'); }}
-                                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${status === 'maybe' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'maybe' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                                     >
                                       <HelpCircle size={16} strokeWidth={4} />
                                     </button>
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'not-going'); }}
-                                      className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${status === 'not-going' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'not-going' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                                     >
                                       <X size={16} strokeWidth={4} />
                                     </button>
@@ -816,6 +915,20 @@ export function Dashboard() {
                 )}
 
                 <div>
+                  <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Status</label>
+                  <select
+                    value={editingMatch.status}
+                    onChange={(e) => setEditingMatch({ ...editingMatch, status: e.target.value as any })}
+                    className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors appearance-none"
+                  >
+                    <option value="scheduled">Scheduled</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="postponed">Postponed</option>
+                  </select>
+                </div>
+
+                <div>
                   <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Date & Time</label>
                   <input
                     type="datetime-local"
@@ -879,6 +992,17 @@ export function Dashboard() {
         message={confirmModal.message}
         onConfirm={confirmModal.onConfirm}
         onCancel={closeConfirmModal}
+      />
+
+      {/* Bulk Add Modal */}
+      <BulkAddModal
+        isOpen={showBulkAddModal}
+        onClose={() => setShowBulkAddModal(false)}
+        teamId={profile.teamId}
+        players={players}
+        onSuccess={() => {
+          // Success notification or just close
+        }}
       />
     </div>
   );

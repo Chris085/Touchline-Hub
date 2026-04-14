@@ -42,8 +42,8 @@ interface FeatureGroup {
 
 export function Features() {
   const navigate = useNavigate();
-  const { profile } = useAuth();
-  const isCoach = profile?.role === 'coach';
+  const { profile, isAdmin } = useAuth();
+  const isCoach = profile?.role === 'coach' || isAdmin;
 
   const groups: FeatureGroup[] = [
     {

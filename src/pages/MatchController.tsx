@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { collection, query, where, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, Timestamp, serverTimestamp, getDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Play, Square, Goal, ArrowLeftRight, Clock, Activity, Trash2, AlertTriangle, UserMinus, ArrowLeft, Trophy, Star, Shield, Users, FileText, Tag, X } from 'lucide-react';
+import { Play, Square, Goal, ArrowLeftRight, Clock, Activity, Trash2, AlertTriangle, UserMinus, ArrowLeft, Trophy, Star, Shield, Users, FileText, Tag, X, CheckCircle, Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface MatchEvent {
@@ -20,9 +21,14 @@ interface MatchEvent {
 }
 
 import { ConfirmModal } from '../components/ConfirmModal';
+import { triggerNotification } from '../lib/notifications';
 
 export function MatchController() {
-  const { profile } = useAuth();
+  const { profile, isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const matchIdParam = searchParams.get('matchId');
+  
   const [matches, setMatches] = useState<any[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
   const [activeMatch, setActiveMatch] = useState<any | null>(null);
@@ -55,7 +61,10 @@ export function MatchController() {
   const [votes, setVotes] = useState<any[]>([]);
   const [userVote, setUserVote] = useState<any | null>(null);
   
-  const isCoach = profile?.role === 'coach';
+  const [isEditingOpponent, setIsEditingOpponent] = useState(false);
+  const [editOpponentName, setEditOpponentName] = useState('');
+  
+  const isCoach = profile?.role === 'coach' || isAdmin;
   const isParentOfAny = players.some(p => p.parentIds?.includes(profile?.uid));
   
   useEffect(() => {
@@ -81,10 +90,22 @@ export function MatchController() {
     
     const unsubMatches = onSnapshot(qMatches, (snapshot) => {
       const matchesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      matchesData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      matchesData.sort((a, b) => {
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      });
       setMatches(matchesData);
       
       setActiveMatch(prev => {
+        if (matchIdParam) {
+          const specificMatch = matchesData.find(m => m.id === matchIdParam);
+          if (specificMatch) {
+            // Skip pre-match screen when explicitly editing via matchId
+            setPreMatch(false);
+            return specificMatch;
+          }
+        }
         if (!prev) {
           const inProgress = matchesData.find(m => m.status === 'in-progress');
           if (inProgress) {
@@ -115,7 +136,11 @@ export function MatchController() {
     if (!activeMatch?.id || !profile?.uid) return;
     
     const votesRef = collection(db, 'motmVotes');
-    const qVotes = query(votesRef, where('matchId', '==', activeMatch.id));
+    const qVotes = query(
+      votesRef, 
+      where('matchId', '==', activeMatch.id),
+      where('teamId', '==', profile.teamId)
+    );
     
     const unsubVotes = onSnapshot(qVotes, (snapshot) => {
       const votesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -131,7 +156,11 @@ export function MatchController() {
   useEffect(() => {
     if (!activeMatch?.id) return;
     const availRef = collection(db, 'availabilities');
-    const qAvail = query(availRef, where('matchId', '==', activeMatch.id));
+    const qAvail = query(
+      availRef, 
+      where('matchId', '==', activeMatch.id),
+      where('teamId', '==', profile.teamId)
+    );
     const unsubAvail = onSnapshot(qAvail, (snapshot) => {
       const availData: Record<string, any> = {};
       snapshot.docs.forEach(doc => {
@@ -249,7 +278,7 @@ export function MatchController() {
   };
 
   const handleStartMatch = async () => {
-    if (!activeMatch) return;
+    if (!activeMatch || !isCoach) return;
     
     const confirmedPlayers = players.filter(p => availabilities[p.id]?.status === 'going');
     const bench = confirmedPlayers.filter(p => !startingLineup.includes(p.id)).map(p => p.id);
@@ -267,6 +296,15 @@ export function MatchController() {
         timerStartTime: serverTimestamp(),
         currentHalf: 1
       });
+
+      // Trigger Notification
+      await triggerNotification({
+        teamId: profile.teamId,
+        title: 'Match Started! ⚽',
+        body: `Live match vs ${activeMatch.opponent} has started. Follow the live score!`,
+        data: { type: 'match_started', matchId: activeMatch.id }
+      });
+
       setPreMatch(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
@@ -274,7 +312,7 @@ export function MatchController() {
   };
 
   const handleToggleTimer = async () => {
-    if (!activeMatch) return;
+    if (!activeMatch || !isCoach) return;
     
     const isStarting = !activeMatch.isTimerRunning;
     
@@ -302,7 +340,7 @@ export function MatchController() {
   };
 
   const handleEndHalf = async () => {
-    if (!activeMatch) return;
+    if (!activeMatch || !isCoach) return;
     
     const currentHalf = activeMatch.currentHalf || 1;
     const isLastHalf = currentHalf === 2;
@@ -331,6 +369,14 @@ export function MatchController() {
             updates.timerAccumulated = currentAccumulated;
             updates.half2Duration = currentAccumulated - ((team?.halfDuration || 0) * 60);
             updates.isPotmVotingOpen = false;
+
+            // Trigger Notification
+            await triggerNotification({
+              teamId: profile.teamId,
+              title: 'Match Finished! 🏁',
+              body: `Final Score: Us ${activeMatch.scoreUs} - ${activeMatch.scoreThem} ${activeMatch.opponent}`,
+              data: { type: 'match_finished', matchId: activeMatch.id, scoreUs: activeMatch.scoreUs, scoreThem: activeMatch.scoreThem }
+            });
           } else {
             updates.currentHalf = 2;
             updates.half1Duration = currentAccumulated;
@@ -352,7 +398,7 @@ export function MatchController() {
   };
 
   const handleAddEvent = async (player: any, secondaryPlayer?: any) => {
-    if (!activeMatch || !showEventModal) return;
+    if (!activeMatch || !showEventModal || !isCoach) return;
 
     const eventTime = formatTime(timer);
     const newEvent: MatchEvent = {
@@ -407,7 +453,7 @@ export function MatchController() {
   };
 
   const handleOpponentGoal = async () => {
-    if (!activeMatch) return;
+    if (!activeMatch || !isCoach) return;
     
     const newEvent: MatchEvent = {
       id: Date.now().toString(),
@@ -506,7 +552,8 @@ export function MatchController() {
         await addDoc(collection(db, 'motmVotes'), {
           matchId: activeMatch.id,
           playerId: playerId,
-          parentId: profile.uid
+          parentId: profile.uid,
+          teamId: profile.teamId
         });
       }
     } catch (error) {
@@ -527,12 +574,63 @@ export function MatchController() {
     }
   };
 
+  const handleSetParentsPotm = async (player: any) => {
+    if (!activeMatch || !isCoach) return;
+    
+    try {
+      await updateDoc(doc(db, 'matches', activeMatch.id), {
+        parentsPotmId: player.id,
+        parentsPotmName: player.name
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
+    }
+  };
+
   const handleTogglePotmVoting = async () => {
     if (!activeMatch || !isCoach) return;
     try {
       await updateDoc(doc(db, 'matches', activeMatch.id), {
         isPotmVotingOpen: !activeMatch.isPotmVotingOpen
       });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
+    }
+  };
+
+  const handleCompleteScheduledMatch = async () => {
+    if (!activeMatch || !isCoach) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Complete Match',
+      message: 'Are you sure you want to mark this match as completed? This will save the current score and events.',
+      onConfirm: async () => {
+        try {
+          await updateDoc(doc(db, 'matches', activeMatch.id), {
+            status: 'completed',
+            isTimerRunning: false,
+            timerStartTime: null,
+            timerAccumulated: 0,
+            currentHalf: 2,
+            scoreUs: activeMatch.scoreUs || 0,
+            scoreThem: activeMatch.scoreThem || 0,
+            isPotmVotingOpen: false
+          });
+          closeConfirmModal();
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
+        }
+      }
+    });
+  };
+
+  const handleSaveOpponent = async () => {
+    if (!activeMatch || !isCoach) return;
+    try {
+      await updateDoc(doc(db, 'matches', activeMatch.id), {
+        opponent: editOpponentName
+      });
+      setIsEditingOpponent(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
     }
@@ -562,54 +660,110 @@ export function MatchController() {
           </div>
           
           <div className="mb-6">
-            <p className="text-slate-400 text-sm mb-4">Select the players starting the match. Unselected players will be on the bench.</p>
-            <div className="space-y-2">
-              {confirmedPlayers.map(player => (
-                <button
-                  key={player.id}
-                  onClick={() => toggleStartingPlayer(player.id)}
-                  className={`w-full text-left p-4 rounded-xl font-medium transition-colors flex justify-between items-center ${
-                    startingLineup.includes(player.id) ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-slate-800 text-white border border-slate-700'
-                  }`}
-                >
-                  {player.name}
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                    startingLineup.includes(player.id) ? 'border-green-500 bg-green-500' : 'border-slate-600'
-                  }`}>
-                    {startingLineup.includes(player.id) && <div className="w-2 h-2 bg-slate-900 rounded-full" />}
-                  </div>
-                </button>
-              ))}
-              {confirmedPlayers.length === 0 && (
-                <p className="text-slate-500 text-center py-4">No players have confirmed attendance.</p>
-              )}
-            </div>
+            {isCoach ? (
+              <>
+                <p className="text-slate-400 text-sm mb-4">Select the players starting the match. Unselected players will be on the bench.</p>
+                <div className="space-y-2">
+                  {confirmedPlayers.map(player => (
+                    <button
+                      key={player.id}
+                      onClick={() => toggleStartingPlayer(player.id)}
+                      className={`w-full text-left p-4 rounded-xl font-medium transition-colors flex justify-between items-center ${
+                        startingLineup.includes(player.id) ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-slate-800 text-white border border-slate-700'
+                      }`}
+                    >
+                      {player.name}
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                        startingLineup.includes(player.id) ? 'border-green-500 bg-green-500' : 'border-slate-600'
+                      }`}>
+                        {startingLineup.includes(player.id) && <div className="w-2 h-2 bg-slate-900 rounded-full" />}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-8">
+                <Clock size={48} className="text-slate-700 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-white mb-2">Match Not Started</h3>
+                <p className="text-slate-400">The coach hasn't started the live match controller yet. Check back once the match kicks off!</p>
+              </div>
+            )}
+            {confirmedPlayers.length === 0 && isCoach && (
+              <p className="text-slate-500 text-center py-4">No players have confirmed attendance.</p>
+            )}
           </div>
 
-          <button
-            onClick={handleStartMatch}
-            className="w-full bg-green-500 hover:bg-green-400 text-slate-950 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95"
-          >
-            <Play size={20} fill="currentColor" />
-            START MATCH
-          </button>
+          {isCoach && (
+            <button
+              onClick={handleStartMatch}
+              className="w-full bg-green-500 hover:bg-green-400 text-slate-950 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95"
+            >
+              <Play size={20} fill="currentColor" />
+              START MATCH
+            </button>
+          )}
         </div>
       </div>
     );
   }
 
   if (activeMatch && !preMatch) {
-    const onPitchPlayers = players.filter(p => (activeMatch.onPitch || []).includes(p.id));
+    const onPitchPlayers = (activeMatch.onPitch && activeMatch.onPitch.length > 0) 
+      ? players.filter(p => activeMatch.onPitch.includes(p.id))
+      : players;
     const onBenchPlayers = players.filter(p => (activeMatch.onBench || []).includes(p.id));
     const { nominalTime, addedTime } = getTimerDisplay(timer);
 
+    const getParentsPotmWinner = () => {
+      if (activeMatch.parentsPotmId) return { id: activeMatch.parentsPotmId, name: activeMatch.parentsPotmName };
+      if (votes.length === 0) return null;
+      
+      const voteCounts: Record<string, number> = {};
+      votes.forEach(v => {
+        voteCounts[v.playerId] = (voteCounts[v.playerId] || 0) + 1;
+      });
+      
+      let maxVotes = 0;
+      let winnerId = '';
+      
+      Object.entries(voteCounts).forEach(([id, count]) => {
+        if (count > maxVotes) {
+          maxVotes = count;
+          winnerId = id;
+        }
+      });
+      
+      const winner = players.find(p => p.id === winnerId);
+      return winner ? { id: winner.id, name: winner.name, count: maxVotes } : null;
+    };
+
+    const parentsPotmWinner = getParentsPotmWinner();
+
     return (
       <div className="space-y-6 max-w-2xl mx-auto">
+        {matchIdParam && (
+          <button
+            onClick={() => navigate(`/schedule/${matchIdParam}`)}
+            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-2"
+          >
+            <ArrowLeft size={20} />
+            Back to Match Details
+          </button>
+        )}
         {/* Match Header */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-blue-500" />
           
-          <div className="flex flex-col items-center justify-center mb-6">
+          {activeMatch.opponent && (
+            <div className="absolute top-4 left-0 w-full text-center">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest bg-slate-800/50 px-3 py-1 rounded-full">
+                vs {activeMatch.opponent}
+              </span>
+            </div>
+          )}
+          
+          <div className="flex flex-col items-center justify-center mb-6 mt-4">
             <div className="flex items-center justify-center gap-2 text-green-400 font-mono text-4xl font-bold tracking-wider">
               <Clock size={32} className={activeMatch.isTimerRunning ? "animate-pulse" : ""} />
               <span>{nominalTime}</span>
@@ -632,31 +786,83 @@ export function MatchController() {
             </div>
             <div className="text-4xl font-black text-slate-700 px-4">-</div>
             <div className="text-center flex-1">
-              <div className="text-sm text-slate-400 uppercase tracking-widest mb-2">{activeMatch.opponent}</div>
+              {isEditingOpponent ? (
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={editOpponentName}
+                    onChange={(e) => setEditOpponentName(e.target.value)}
+                    className="w-24 bg-slate-800 border-none rounded px-2 py-1 text-sm text-white text-center uppercase tracking-widest focus:ring-1 focus:ring-green-500"
+                    placeholder="Opponent"
+                    autoFocus
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveOpponent()}
+                  />
+                  <button onClick={handleSaveOpponent} className="text-green-500 hover:text-green-400">
+                    <CheckCircle size={16} />
+                  </button>
+                </div>
+              ) : (
+                <div 
+                  className="text-sm text-slate-400 uppercase tracking-widest mb-2 cursor-pointer hover:text-white transition-colors flex items-center justify-center gap-1 group break-words"
+                  onClick={() => {
+                    if (isCoach) {
+                      setEditOpponentName(activeMatch.opponent || '');
+                      setIsEditingOpponent(true);
+                    }
+                  }}
+                >
+                  {activeMatch.opponent || 'Opponent'}
+                  {isCoach && <Edit2 size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
+                </div>
+              )}
               <div className="text-6xl font-black text-white">{activeMatch.scoreThem || 0}</div>
             </div>
           </div>
 
           <div className="flex gap-4 justify-center">
             {isCoach ? (
-              <>
-                <button
-                  onClick={handleToggleTimer}
-                  className={`flex-1 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 ${
-                    activeMatch.isTimerRunning ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30' : 'bg-green-500/20 text-green-500 hover:bg-green-500/30'
-                  }`}
-                >
-                  {activeMatch.isTimerRunning ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-                  {activeMatch.isTimerRunning ? 'PAUSE' : 'RESUME'}
-                </button>
-                <button
-                  onClick={handleEndHalf}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 border border-slate-700"
-                >
-                  <Clock size={20} />
-                  {activeMatch.currentHalf === 1 ? 'END HALF' : 'END MATCH'}
-                </button>
-              </>
+              activeMatch.status === 'completed' ? (
+                <div className="flex-1 py-4 rounded-xl font-bold flex items-center justify-center gap-2 bg-slate-800/50 text-slate-400 border border-slate-700/50 italic">
+                  <Trophy size={20} className="text-yellow-500" />
+                  MATCH COMPLETED
+                </div>
+              ) : activeMatch.status === 'scheduled' ? (
+                <div className="flex gap-4 w-full">
+                  <button
+                    onClick={handleStartMatch}
+                    className="flex-1 bg-green-500/20 text-green-500 hover:bg-green-500/30 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 border border-green-500/50"
+                  >
+                    <Play size={20} fill="currentColor" />
+                    START LIVE
+                  </button>
+                  <button
+                    onClick={handleCompleteScheduledMatch}
+                    className="flex-1 bg-blue-500/20 text-blue-500 hover:bg-blue-500/30 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 border border-blue-500/50"
+                  >
+                    <CheckCircle size={20} />
+                    COMPLETE MATCH
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={handleToggleTimer}
+                    className={`flex-1 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 ${
+                      activeMatch.isTimerRunning ? 'bg-amber-500/20 text-amber-500 hover:bg-amber-500/30' : 'bg-green-500/20 text-green-500 hover:bg-green-500/30'
+                    }`}
+                  >
+                    {activeMatch.isTimerRunning ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+                    {activeMatch.isTimerRunning ? 'PAUSE' : 'RESUME'}
+                  </button>
+                  <button
+                    onClick={handleEndHalf}
+                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 border border-slate-700"
+                  >
+                    <Clock size={20} />
+                    {activeMatch.currentHalf === 1 ? 'END HALF' : 'END MATCH'}
+                  </button>
+                </>
+              )
             ) : (
               <div className="flex-1 py-4 rounded-xl font-bold flex items-center justify-center gap-2 bg-slate-800/50 text-slate-400 border border-slate-700/50 italic">
                 {activeMatch.isTimerRunning ? 'Match is Live' : 'Match is Paused'}
@@ -752,15 +958,18 @@ export function MatchController() {
           </div>
 
           <div className="space-y-6">
-            {/* Parents' POTM Voting */}
+            {/* Parents' POTM Voting / Result */}
             {(isParentOfAny || isCoach) && (
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Parents' Vote</h4>
-                  {!activeMatch.isPotmVotingOpen && !isCoach && (
-                    <span className="text-[10px] text-amber-500 font-bold uppercase tracking-wider bg-amber-500/10 px-2 py-0.5 rounded">
-                      Waiting for coach
-                    </span>
+                  <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Parents' Selection</h4>
+                  {parentsPotmWinner && (
+                    <div className="flex items-center gap-2 bg-yellow-500/10 px-3 py-1 rounded-full border border-yellow-500/20">
+                      <Trophy size={12} className="text-yellow-500" />
+                      <span className="text-[10px] font-black text-yellow-500 uppercase italic font-display tracking-tight">
+                        Winner: {parentsPotmWinner.name}
+                      </span>
+                    </div>
                   )}
                 </div>
                 
@@ -770,21 +979,38 @@ export function MatchController() {
                       {onPitchPlayers.map(player => (
                         <button
                           key={player.id}
-                          onClick={() => activeMatch.isPotmVotingOpen && handleVotePotm(player.id)}
+                          onClick={() => {
+                            if (activeMatch.isPotmVotingOpen) {
+                              handleVotePotm(player.id);
+                            } else if (isCoach) {
+                              handleSetParentsPotm(player);
+                            }
+                          }}
                           disabled={!activeMatch.isPotmVotingOpen && !isCoach}
-                          className={`p-3 rounded-xl text-sm font-medium transition-all border ${
-                            userVote?.playerId === player.id 
+                          className={`p-3 rounded-xl text-sm font-medium transition-all border flex flex-col items-center gap-1 ${
+                            (userVote?.playerId === player.id || activeMatch.parentsPotmId === player.id)
                               ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400' 
                               : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600'
                           } ${(!activeMatch.isPotmVotingOpen && !isCoach) ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                          {player.name}
+                          <span>{player.name}</span>
+                          {votes.filter(v => v.playerId === player.id).length > 0 && (
+                            <span className="text-[10px] opacity-60 flex items-center gap-1">
+                              <Users size={10} />
+                              {votes.filter(v => v.playerId === player.id).length}
+                            </span>
+                          )}
                         </button>
                       ))}
                     </div>
                     {userVote && (
                       <p className="text-xs text-slate-500 mt-2 italic text-center">
                         You voted for {players.find(p => p.id === userVote.playerId)?.name}
+                      </p>
+                    )}
+                    {isCoach && activeMatch.parentsPotmId && (
+                      <p className="text-xs text-slate-500 mt-2 italic text-center">
+                        Manual selection: {activeMatch.parentsPotmName}
                       </p>
                     )}
                   </>
@@ -814,12 +1040,6 @@ export function MatchController() {
                       }`}
                     >
                       <span>{player.name}</span>
-                      {votes.filter(v => v.playerId === player.id).length > 0 && (
-                        <span className="text-[10px] opacity-60 flex items-center gap-1">
-                          <Users size={10} />
-                          {votes.filter(v => v.playerId === player.id).length}
-                        </span>
-                      )}
                     </button>
                   ))}
                 </div>
@@ -1112,16 +1332,32 @@ export function MatchController() {
                 </div>
                 <h3 className="text-xl font-bold text-white mb-1">vs {match.opponent}</h3>
                 <p className="text-slate-400 text-sm mb-6">
-                  {new Date(match.date).toLocaleDateString()} • {new Date(match.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  {match.date ? (
+                    <>
+                      {new Date(match.date).toLocaleDateString()} • {new Date(match.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    </>
+                  ) : (
+                    'Postponed TBA'
+                  )}
                 </p>
               </div>
-              <button
-                onClick={() => handleSelectMatch(match)}
-                className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 ${match.status === 'in-progress' ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-950' : 'bg-green-500 hover:bg-green-400 text-slate-950'}`}
-              >
-                <Play size={20} fill="currentColor" />
-                {match.status === 'in-progress' ? 'RESUME MATCH' : 'START MATCH'}
-              </button>
+              {isCoach ? (
+                <button
+                  onClick={() => handleSelectMatch(match)}
+                  className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 ${match.status === 'in-progress' ? 'bg-yellow-500 hover:bg-yellow-400 text-slate-950' : 'bg-green-500 hover:bg-green-400 text-slate-950'}`}
+                >
+                  <Play size={20} fill="currentColor" />
+                  {match.status === 'in-progress' ? 'RESUME MATCH' : 'START MATCH'}
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSelectMatch(match)}
+                  className="w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700"
+                >
+                  <Activity size={20} />
+                  VIEW LIVE
+                </button>
+              )}
             </div>
           ))}
         </div>

@@ -23,6 +23,7 @@ const initializeDb = async () => {
       if (!admin.apps.length) {
         admin.initializeApp({
           credential: admin.credential.applicationDefault(),
+          projectId: firebaseConfig.projectId,
         });
       }
       // Use getFirestore from firebase-admin/firestore to specify databaseId if needed
@@ -187,6 +188,125 @@ async function startServer() {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // Push Notification Helper
+  const sendNotification = async (tokens: string[], title: string, body: string, data?: any) => {
+    if (!tokens.length) return;
+    
+    const message = {
+      notification: { title, body },
+      data: data || {},
+      tokens: tokens.filter(t => !!t),
+    };
+
+    try {
+      const response = await admin.messaging().sendEachForMulticast(message);
+      console.log(`[Notification] Successfully sent ${response.successCount} messages; ${response.failureCount} failed.`);
+      
+      // Handle failed tokens (e.g., remove invalid tokens from DB)
+      if (response.failureCount > 0) {
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            console.error(`[Notification] Failed to send to token ${message.tokens[idx]}:`, resp.error);
+          }
+        });
+      }
+    } catch (error) {
+      console.error("[Notification] Error sending multicast message:", error);
+    }
+  };
+
+  // Send Notification Endpoint
+  app.post("/api/send-notification", async (req, res) => {
+    const { teamId, title, body, data, recipientIds } = req.body;
+    if (!db) return res.status(500).json({ error: "Database not initialized" });
+
+    try {
+      let tokens: string[] = [];
+      
+      if (recipientIds && recipientIds.length > 0) {
+        // Send to specific users
+        const usersSnapshot = await db.collection("users").where(admin.firestore.FieldPath.documentId(), "in", recipientIds).get();
+        tokens = usersSnapshot.docs.map((doc: any) => doc.data().fcmToken).filter((t: any) => !!t);
+      } else if (teamId) {
+        // Send to entire team
+        const usersSnapshot = await db.collection("users").where("teamId", "==", teamId).get();
+        tokens = usersSnapshot.docs.map((doc: any) => doc.data().fcmToken).filter((t: any) => !!t);
+      }
+
+      if (tokens.length > 0) {
+        await sendNotification(tokens, title, body, data);
+        res.json({ success: true, count: tokens.length });
+      } else {
+        res.json({ success: true, count: 0, message: "No tokens found" });
+      }
+    } catch (error: any) {
+      console.error("[Notification] Error in /api/send-notification:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Background task for unconfirmed schedule entries (runs every hour)
+  setInterval(async () => {
+    if (!db) return;
+    console.log("[Background] Checking for unconfirmed schedule entries...");
+    
+    try {
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      // Check matches and training sessions in the next 24 hours
+      const eventsSnapshot = await db.collection("matches")
+        .where("date", ">=", now.toISOString())
+        .where("date", "<=", tomorrow.toISOString())
+        .get();
+
+      const allEvents = eventsSnapshot.docs;
+      
+      for (const eventDoc of allEvents) {
+        const event = eventDoc.data();
+        const eventId = eventDoc.id;
+        const teamId = event.teamId;
+        
+        // Get all players for this team
+        const playersSnapshot = await db.collection("players").where("teamId", "==", teamId).get();
+        const players = playersSnapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+        
+        // Get attendances for this event
+        const attendancesSnapshot = await db.collection("attendances")
+          .where("matchId", "==", eventId)
+          .get();
+        const attendances = attendancesSnapshot.docs.map((doc: any) => doc.data());
+        
+        const confirmedPlayerIds = attendances.map((a: any) => a.playerId);
+        const unconfirmedPlayers = players.filter((p: any) => !confirmedPlayerIds.includes(p.id));
+        
+        if (unconfirmedPlayers.length > 0) {
+          // Find parents of unconfirmed players
+          for (const player of unconfirmedPlayers) {
+            const parentsSnapshot = await db.collection("users")
+              .where("role", "==", "parent")
+              .where("linkedPlayerIds", "array-contains", player.id)
+              .get();
+              
+            const parentTokens = parentsSnapshot.docs.map((doc: any) => doc.data().fcmToken).filter((t: any) => !!t);
+            
+            if (parentTokens.length > 0) {
+              await sendNotification(
+                parentTokens,
+                "Action Required: Match Confirmation",
+                `Please confirm attendance for ${player.name} for the upcoming event: ${event.opponent || event.title}`,
+                { eventId, type: 'reminder' }
+              );
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[Background] Error in unconfirmed entries check:", error);
+    }
+  }, 1000 * 60 * 60); // Every hour
 
   // Validate Coach Code
   app.post("/api/validate-coach-code", async (req, res) => {

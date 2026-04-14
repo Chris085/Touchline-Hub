@@ -26,7 +26,7 @@ export async function clientFetch<T>(url: string, options: FetchOptions = {}): P
 
   try {
     // 3. Use the native fetch
-    const response = await window.fetch(finalUrl, {
+    const response = await fetch(finalUrl, {
       ...rest,
       headers: defaultHeaders,
     });

@@ -43,7 +43,9 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isAuthenticated() && request.auth.uid == "V45Buf6eA5ggg2JUFShJpj48y2y2";
+      return isAuthenticated() && 
+             (request.auth.uid == "V45Buf6eA5ggg2JUFShJpj48y2y2" || 
+              request.auth.token.email == "chrisjeal9@gmail.com");
     }
 
     // ===============================================================
@@ -96,10 +98,11 @@ service cloud.firestore {
              data.type in ['match', 'training'] &&
              (!('matchCategory' in data) || data.matchCategory in ['league', 'cup', 'friendly']) &&
              data.date is string &&
-             data.status in ['scheduled', 'in-progress', 'completed'] &&
+             data.status in ['scheduled', 'in-progress', 'completed', 'postponed'] &&
              (!('opponent' in data) || (data.opponent is string && data.opponent.size() < 100)) &&
              (!('location' in data) || (data.location is string && data.location.size() < 200)) &&
              (!('postcode' in data) || (data.postcode is string && data.postcode.size() < 20)) &&
+             (!('postponedNote' in data) || (data.postponedNote is string && data.postponedNote.size() < 500)) &&
              (!('trainingNotes' in data) || (data.trainingNotes is string && data.trainingNotes.size() < 2000)) &&
              (!('scoreUs' in data) || data.scoreUs is number) &&
              (!('scoreThem' in data) || data.scoreThem is number) &&
@@ -114,6 +117,8 @@ service cloud.firestore {
              (!('onBench' in data) || data.onBench is list) &&
              (!('coachPotmId' in data) || data.coachPotmId is string) &&
              (!('coachPotmName' in data) || data.coachPotmName is string) &&
+             (!('parentPotmId' in data) || data.parentPotmId is string) &&
+             (!('parentPotmName' in data) || data.parentPotmName is string) &&
              (!('isPotmVotingOpen' in data) || data.isPotmVotingOpen is bool);
     }
 
@@ -127,10 +132,11 @@ service cloud.firestore {
     }
 
     function isValidMotmVote(data) {
-      return hasRequiredFields(['matchId', 'playerId', 'parentId']) &&
+      return hasRequiredFields(['matchId', 'playerId', 'parentId', 'teamId']) &&
              data.matchId is string &&
              data.playerId is string &&
-             data.parentId is string;
+             data.parentId is string &&
+             data.teamId is string;
     }
 
     function isValidAttendance(data) {
@@ -221,12 +227,135 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt is string);
     }
 
+    function isValidPlayerPayment(data) {
+      return hasRequiredFields(['playerId', 'teamId', 'totalPaid', 'matchesPlayed']) &&
+             data.playerId is string &&
+             data.teamId is string &&
+             data.totalPaid is number &&
+             data.matchesPlayed is number &&
+             (!('lastPaymentDate' in data) || data.lastPaymentDate is string);
+    }
+
+    function isValidPaymentTransaction(data) {
+      return hasRequiredFields(['playerId', 'teamId', 'amount', 'date', 'type']) &&
+             data.playerId is string &&
+             data.teamId is string &&
+             data.amount is number &&
+             data.date is string &&
+             data.type in ['match', 'monthly'] &&
+             (!('note' in data) || data.note is string);
+    }
+
+    function isValidMonthlySub(data) {
+      return hasRequiredFields(['playerId', 'teamId', 'month', 'status']) &&
+             data.playerId is string &&
+             data.teamId is string &&
+             data.month is string &&
+             data.status in ['paid', 'unpaid', 'exempt'] &&
+             (!('paidAt' in data) || data.paidAt is string);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
-    match /{document=**} {
-      allow read, write: if true;
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /teams/{teamId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidTeam(request.resource.data);
+      allow update: if isCoach(teamId) && isValidTeam(request.resource.data);
+    }
+
+    match /players/{playerId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPlayerCreate(request.resource.data) && isCoach(request.resource.data.teamId);
+      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isCoach(resource.data.teamId) || isParentOfPlayer(playerId));
+      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+    }
+
+    match /matches/{matchId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow create: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(request.resource.data.teamId);
+      allow update: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(resource.data.teamId);
+      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+    }
+
+    match /availabilities/{availabilityId} {
+      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow write: if isAuthenticated() && isValidAvailability(request.resource.data) && (isCoach(request.resource.data.teamId) || isParentOfPlayer(request.resource.data.playerId));
+    }
+
+    match /motmVotes/{voteId} {
+      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow create: if isAuthenticated() && isValidMotmVote(request.resource.data);
+      allow update: if isOwner(resource.data.parentId) && isValidMotmVote(request.resource.data);
+    }
+
+    match /attendances/{attendanceId} {
+      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow write: if isCoach(request.resource.data.teamId) && isValidAttendance(request.resource.data);
+    }
+
+    match /playerNotes/{noteId} {
+      allow read: if isCoach(resource.data.teamId) || isAdmin();
+      allow write: if isCoach(request.resource.data.teamId) && isValidPlayerNote(request.resource.data);
+    }
+
+    match /newsPosts/{postId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow create: if isCoach(request.resource.data.teamId) && isValidNewsPost(request.resource.data);
+      allow update, delete: if isCoach(resource.data.teamId) && isValidNewsPost(request.resource.data);
+    }
+
+    match /newsComments/{commentId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow create: if isTeamMember(request.resource.data.teamId) && isValidNewsComment(request.resource.data);
+      allow delete: if isOwner(resource.data.authorId) || isCoach(resource.data.teamId);
+    }
+
+    match /newsLikes/{likeId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow write: if isOwner(request.resource.data.userId) && isValidNewsLike(request.resource.data);
+    }
+
+    match /chatMessages/{messageId} {
+      allow read: if isTeamMember(resource.data.teamId);
+      allow create: if isTeamMember(request.resource.data.teamId) && isValidChatMessage(request.resource.data);
+    }
+
+    match /notes/{noteId} {
+      allow read: if isCoach(resource.data.teamId) || isAdmin();
+      allow write: if isCoach(request.resource.data.teamId) && isValidNote(request.resource.data);
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /coachCodes/{codeId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /playerPayments/{paymentId} {
+      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow write: if (isCoach(request.resource.data.teamId) || isAdmin()) && isValidPlayerPayment(request.resource.data);
+    }
+
+    match /paymentTransactions/{transactionId} {
+      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow create: if (isCoach(request.resource.data.teamId) || isAdmin()) && isValidPaymentTransaction(request.resource.data);
+      allow delete: if isCoach(resource.data.teamId) || isAdmin();
+    }
+
+    match /monthlySubs/{subId} {
+      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow write: if (isCoach(request.resource.data.teamId) || isAdmin()) && isValidMonthlySub(request.resource.data);
     }
   }
 }
