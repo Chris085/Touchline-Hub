@@ -54,6 +54,7 @@
         "seasonStart": { "type": "string", "format": "date" },
         "seasonEnd": { "type": "string", "format": "date" },
         "seasonTag": { "type": "string", "description": "e.g., 25/26" },
+        "maxMatchPlayers": { "type": "number", "description": "Max players allowed for match line-up" },
         "paymentSettings": {
           "type": "object",
           "properties": {
@@ -97,6 +98,7 @@
         "matchCategory": { "type": "string", "enum": ["league", "cup", "friendly"] },
         "opponent": { "type": "string" },
         "date": { "type": "string", "format": "date-time" },
+        "meetTime": { "type": "string" },
         "location": { "type": "string" },
         "postcode": { "type": "string" },
         "trainingNotes": { "type": "string" },
@@ -182,62 +184,6 @@
         "abilityRating": { "type": "number" }
       },
       "required": ["playerId", "teamId", "coachId", "note", "date"]
-    },
-    "NewsPost": {
-      "title": "News Post",
-      "description": "A news post for the team feed",
-      "type": "object",
-      "properties": {
-        "teamId": { "type": "string" },
-        "authorId": { "type": "string" },
-        "authorName": { "type": "string" },
-        "authorRole": { "type": "string" },
-        "content": { "type": "string" },
-        "imageUrl": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "likesCount": { "type": "number" },
-        "commentsCount": { "type": "number" }
-      },
-      "required": ["teamId", "authorId", "authorName", "content", "createdAt"]
-    },
-    "NewsComment": {
-      "title": "News Comment",
-      "description": "A comment on a news post",
-      "type": "object",
-      "properties": {
-        "postId": { "type": "string" },
-        "teamId": { "type": "string" },
-        "authorId": { "type": "string" },
-        "authorName": { "type": "string" },
-        "content": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["postId", "teamId", "authorId", "authorName", "content", "createdAt"]
-    },
-    "NewsLike": {
-      "title": "News Like",
-      "description": "A like on a news post",
-      "type": "object",
-      "properties": {
-        "postId": { "type": "string" },
-        "userId": { "type": "string" },
-        "teamId": { "type": "string" }
-      },
-      "required": ["postId", "userId", "teamId"]
-    },
-    "ChatMessage": {
-      "title": "Chat Message",
-      "description": "A message in the team chat",
-      "type": "object",
-      "properties": {
-        "teamId": { "type": "string" },
-        "senderId": { "type": "string" },
-        "senderName": { "type": "string" },
-        "senderRole": { "type": "string" },
-        "content": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["teamId", "senderId", "senderName", "content", "createdAt"]
     },
     "Note": {
       "title": "Note",
@@ -330,22 +276,6 @@
     "playerNotes/{noteId}": {
       "schema": "PlayerNote",
       "description": "Coach notes on players"
-    },
-    "newsPosts/{postId}": {
-      "schema": "NewsPost",
-      "description": "Team news posts"
-    },
-    "newsComments/{commentId}": {
-      "schema": "NewsComment",
-      "description": "Comments on news posts"
-    },
-    "newsLikes/{likeId}": {
-      "schema": "NewsLike",
-      "description": "Likes on news posts"
-    },
-    "chatMessages/{messageId}": {
-      "schema": "ChatMessage",
-      "description": "Team chat messages"
     },
     "notes/{noteId}": {
       "schema": "Note",

@@ -10,8 +10,6 @@ import {
   CreditCard, 
   Zap,
   Activity,
-  MessageSquare,
-  Newspaper,
   Settings,
   LogOut,
   UserX,
@@ -58,9 +56,11 @@ export function Profile() {
     seasonStart: '',
     seasonEnd: '',
     seasonTag: '',
-    halfDuration: 20
+    halfDuration: 20,
+    maxMatchPlayers: 16
   });
   const [isSavingSeason, setIsSavingSeason] = useState(false);
+  const [saveToast, setSaveToast] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<{ isOpen: boolean; userId: string; name: string }>({
     isOpen: false,
     userId: '',
@@ -81,7 +81,8 @@ export function Profile() {
           seasonStart: data.seasonStart || '',
           seasonEnd: data.seasonEnd || '',
           seasonTag: data.seasonTag || '',
-          halfDuration: data.halfDuration || 20
+          halfDuration: data.halfDuration || 20,
+          maxMatchPlayers: data.maxMatchPlayers || 16
         });
       }
     };
@@ -100,51 +101,6 @@ export function Profile() {
       })) as TeamMember[];
       setTeamMembers(members);
       setLoading(false);
-    });
-
-    // Fetch recent activity
-    const newsQuery = query(
-      collection(db, 'newsPosts'),
-      where('teamId', '==', profile.teamId),
-      orderBy('createdAt', 'desc'),
-      limit(3)
-    );
-
-    const chatQuery = query(
-      collection(db, 'chatMessages'),
-      where('teamId', '==', profile.teamId),
-      orderBy('createdAt', 'desc'),
-      limit(3)
-    );
-
-    const unsubscribeNews = onSnapshot(newsQuery, (snapshot) => {
-      const newsItems: ActivityItem[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        type: 'news',
-        title: 'New Post',
-        description: (doc.data().content || '').substring(0, 50) + '...',
-        timestamp: doc.data().createdAt,
-        icon: Newspaper
-      }));
-      setActivities(prev => {
-        const filtered = prev.filter(a => a.type !== 'news');
-        return [...filtered, ...newsItems].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 10);
-      });
-    });
-
-    const unsubscribeChat = onSnapshot(chatQuery, (snapshot) => {
-      const chatItems: ActivityItem[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        type: 'chat',
-        title: `Message from ${doc.data().senderName}`,
-        description: (doc.data().content || '').substring(0, 50) + '...',
-        timestamp: doc.data().createdAt,
-        icon: MessageSquare
-      }));
-      setActivities(prev => {
-        const filtered = prev.filter(a => a.type !== 'chat');
-        return [...filtered, ...chatItems].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 10);
-      });
     });
 
     // Fetch recent match events
@@ -177,8 +133,6 @@ export function Profile() {
 
     return () => {
       unsubscribeMembers();
-      unsubscribeNews();
-      unsubscribeChat();
       unsubscribeMatches();
     };
   }, [profile?.teamId]);
@@ -261,7 +215,8 @@ export function Profile() {
         ...seasonSettings
       });
       setTeamData({ ...teamData, ...seasonSettings });
-      alert('Season settings saved successfully!');
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 3000);
     } catch (error) {
       console.error('Error saving season settings:', error);
       alert('Failed to save season settings.');
@@ -386,7 +341,7 @@ export function Profile() {
           </div>
           
           <div className="text-center sm:text-left flex-1">
-            <h1 className="text-2xl sm:text-3xl font-black text-white mb-1 break-words">{profile?.displayName || 'User'}</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-50 mb-1 break-words">{profile?.displayName || 'User'}</h1>
             <div className="flex flex-wrap justify-center sm:justify-start gap-3 items-center">
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold uppercase tracking-wider border border-slate-700">
                 <Shield size={12} className={isCoach ? "text-green-400" : "text-blue-400"} />
@@ -408,7 +363,7 @@ export function Profile() {
           <div className="flex gap-2">
             <button
               onClick={signOut}
-              className="p-3 rounded-2xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-all border border-slate-700"
+              className="p-3 rounded-2xl bg-slate-800 text-slate-400 hover:text-slate-50 hover:bg-slate-700 transition-all border border-slate-700"
               title="Sign Out"
             >
               <LogOut size={20} />
@@ -422,7 +377,7 @@ export function Profile() {
         <button
           onClick={() => setActiveTab('overview')}
           className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-            activeTab === 'overview' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+            activeTab === 'overview' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
           }`}
         >
           Overview
@@ -431,7 +386,7 @@ export function Profile() {
           <button
             onClick={() => setActiveTab('team')}
             className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-              activeTab === 'team' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+              activeTab === 'team' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
             }`}
           >
             Team Management
@@ -441,7 +396,7 @@ export function Profile() {
           <button
             onClick={() => setActiveTab('season')}
             className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-              activeTab === 'season' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+              activeTab === 'season' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
             }`}
           >
             Season Setup
@@ -450,7 +405,7 @@ export function Profile() {
         <button
           onClick={() => setActiveTab('teams')}
           className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-            activeTab === 'teams' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+            activeTab === 'teams' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
           }`}
         >
           My Teams
@@ -458,7 +413,7 @@ export function Profile() {
         <button
           onClick={() => setActiveTab('activity')}
           className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-            activeTab === 'activity' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+            activeTab === 'activity' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
           }`}
         >
           Activity
@@ -480,7 +435,7 @@ export function Profile() {
                 {/* Subscription Card */}
                 <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-white">Subscription</h3>
+                    <h3 className="text-lg font-bold text-slate-50">Subscription</h3>
                     <CreditCard size={20} className="text-slate-500" />
                   </div>
                   
@@ -494,7 +449,7 @@ export function Profile() {
                           {isSubscribed ? 'Active' : 'Inactive'}
                         </span>
                       </div>
-                      <p className="text-white font-bold">
+                      <p className="text-slate-50 font-bold">
                         {isSubscribed ? 'Premium Access' : 'Free Plan'}
                       </p>
                       {profile?.trialEndDate && !isSubscribed && (
@@ -531,16 +486,16 @@ export function Profile() {
                 {/* Quick Stats Card */}
                 <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-bold text-white">Quick Stats</h3>
+                    <h3 className="text-lg font-bold text-slate-50">Quick Stats</h3>
                     <Activity size={20} className="text-slate-500" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700/50 text-center">
-                      <p className="text-2xl font-black text-white">{teamMembers.length}</p>
+                      <p className="text-2xl font-black text-slate-50">{teamMembers.length}</p>
                       <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Members</p>
                     </div>
                     <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-700/50 text-center">
-                      <p className="text-2xl font-black text-white">{activities.length}</p>
+                      <p className="text-2xl font-black text-slate-50">{activities.length}</p>
                       <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Activities</p>
                     </div>
                   </div>
@@ -550,7 +505,7 @@ export function Profile() {
               {/* Recent Activity Preview */}
               <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-white">Recent Activity</h3>
+                  <h3 className="text-lg font-bold text-slate-50">Recent Activity</h3>
                   <button onClick={() => setActiveTab('activity')} className="text-xs text-green-400 font-bold uppercase tracking-wider hover:text-green-300 transition-colors">View All</button>
                 </div>
                 <div className="space-y-3">
@@ -562,7 +517,7 @@ export function Profile() {
                           <Icon size={14} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-white truncate">{activity.title}</p>
+                          <p className="text-xs font-bold text-slate-50 truncate">{activity.title}</p>
                           <p className="text-[10px] text-slate-500 truncate">{activity.description}</p>
                         </div>
                       </div>
@@ -580,7 +535,7 @@ export function Profile() {
                 <p className="text-sm text-slate-500 mb-4">Once you delete your profile, there is no going back. Please be certain.</p>
                 <button
                   onClick={deleteProfile}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all text-xs font-bold uppercase tracking-wider"
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-slate-50 transition-all text-xs font-bold uppercase tracking-wider"
                 >
                   <UserX size={16} />
                   Delete Profile
@@ -598,7 +553,7 @@ export function Profile() {
               className="space-y-4"
             >
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-bold text-white">Team Members</h3>
+                <h3 className="text-lg font-bold text-slate-50">Team Members</h3>
                 <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">{visibleMembers.length} Connected</span>
               </div>
 
@@ -618,7 +573,7 @@ export function Profile() {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold text-white truncate">{member.displayName || 'Anonymous'}</p>
+                          <p className="font-bold text-slate-50 truncate">{member.displayName || 'Anonymous'}</p>
                           <div className="flex flex-wrap items-center gap-2">
                             {(isSubscriptionOwner || isAdmin) ? (
                               <select
@@ -659,7 +614,7 @@ export function Profile() {
                                 e.preventDefault();
                                 handleRemoveMember(member.uid, member.displayName);
                               }}
-                              className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all sm:opacity-0 sm:group-hover:opacity-100"
+                              className="p-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-slate-50 transition-all sm:opacity-0 sm:group-hover:opacity-100"
                               title="Remove from Team"
                             >
                               <UserX size={16} />
@@ -690,7 +645,7 @@ export function Profile() {
             >
               <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold text-white">Season Configuration</h3>
+                  <h3 className="text-lg font-bold text-slate-50">Season Configuration</h3>
                   <Calendar size={20} className="text-slate-500" />
                 </div>
 
@@ -702,7 +657,7 @@ export function Profile() {
                         type="date"
                         value={seasonSettings.seasonStart}
                         onChange={(e) => setSeasonSettings({ ...seasonSettings, seasonStart: e.target.value })}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       />
                     </div>
                     <div className="space-y-2">
@@ -711,7 +666,7 @@ export function Profile() {
                         type="date"
                         value={seasonSettings.seasonEnd}
                         onChange={(e) => setSeasonSettings({ ...seasonSettings, seasonEnd: e.target.value })}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       />
                     </div>
                   </div>
@@ -723,7 +678,7 @@ export function Profile() {
                       placeholder="e.g., 25/26"
                       value={seasonSettings.seasonTag}
                       onChange={(e) => setSeasonSettings({ ...seasonSettings, seasonTag: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     />
                     <p className="text-[10px] text-slate-500 italic">This tag will be automatically applied to all new matches and training sessions.</p>
                   </div>
@@ -737,15 +692,28 @@ export function Profile() {
                       onChange={(e) => setSeasonSettings({ ...seasonSettings, halfDuration: Number(e.target.value) })}
                       min="1"
                       max="60"
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     />
                     <p className="text-[10px] text-slate-500 italic">Default duration for each half in the match controller.</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Max Players per Match</label>
+                    <input
+                      type="number"
+                      placeholder="e.g., 16"
+                      value={seasonSettings.maxMatchPlayers}
+                      onChange={(e) => setSeasonSettings({ ...seasonSettings, maxMatchPlayers: Number(e.target.value) })}
+                      min="1"
+                      max="30"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
                   </div>
 
                   <button
                     onClick={handleSaveSeason}
                     disabled={isSavingSeason}
-                    className="w-full py-4 bg-green-500 hover:bg-green-400 disabled:bg-slate-700 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                    className="w-full py-4 bg-green-500 hover:bg-green-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 hover:shadow-green-500/40 hover:-translate-y-1 active:scale-[0.98] border border-green-400/50 hover:border-green-300"
                   >
                     {isSavingSeason ? (
                       <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
@@ -758,14 +726,14 @@ export function Profile() {
               </div>
 
               <div className="bg-slate-800/30 rounded-3xl border border-slate-700/30 p-6">
-                <h4 className="text-sm font-bold text-white mb-2">Current Season Info</h4>
+                <h4 className="text-sm font-bold text-slate-50 mb-2">Current Season Info</h4>
                 <div className="flex items-center gap-4">
                   <div className="p-3 rounded-2xl bg-slate-800 text-green-400">
                     <Zap size={20} />
                   </div>
                   <div>
                     <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">Active Season</p>
-                    <p className="text-lg font-black text-white italic font-display">{seasonSettings.seasonTag || 'Not Set'}</p>
+                    <p className="text-lg font-black text-slate-50 italic font-display">{seasonSettings.seasonTag || 'Not Set'}</p>
                   </div>
                 </div>
               </div>
@@ -781,7 +749,7 @@ export function Profile() {
               className="space-y-4"
             >
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-bold text-white">Recent Activity</h3>
+                <h3 className="text-lg font-bold text-slate-50">Recent Activity</h3>
                 <Bell size={18} className="text-slate-500" />
               </div>
 
@@ -799,7 +767,7 @@ export function Profile() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-1">
-                            <p className="font-bold text-white text-sm">{activity.title}</p>
+                            <p className="font-bold text-slate-50 text-sm">{activity.title}</p>
                             <span className="text-[10px] text-slate-500 font-medium">
                               {new Date(activity.timestamp).toLocaleDateString()}
                             </span>
@@ -831,7 +799,7 @@ export function Profile() {
             >
               <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold text-white">Join Another Team</h3>
+                  <h3 className="text-lg font-bold text-slate-50">Join Another Team</h3>
                   <Plus size={20} className="text-slate-500" />
                 </div>
 
@@ -844,7 +812,7 @@ export function Profile() {
                         value={joinCode}
                         onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                         placeholder="P-XXXXXX or 000000"
-                        className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all uppercase font-mono"
+                        className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all uppercase font-mono"
                         maxLength={8}
                       />
                       <button
@@ -865,7 +833,7 @@ export function Profile() {
               </div>
 
               <div className="space-y-4">
-                <h3 className="text-lg font-bold text-white">My Teams</h3>
+                <h3 className="text-lg font-bold text-slate-50">My Teams</h3>
                 <div className="grid grid-cols-1 gap-3">
                   {(profile?.joinedTeams || []).map((team) => (
                     <div 
@@ -883,7 +851,7 @@ export function Profile() {
                           <Users size={20} className={profile?.teamId === team.teamId ? 'text-green-400' : 'text-slate-500'} />
                         </div>
                         <div>
-                          <p className="font-bold text-white">{team.teamName}</p>
+                          <p className="font-bold text-slate-50">{team.teamName}</p>
                           <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">{team.role}</p>
                         </div>
                       </div>
@@ -895,7 +863,7 @@ export function Profile() {
                       ) : (
                         <button
                           onClick={() => switchTeam(team.teamId)}
-                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-all text-[10px] font-bold uppercase tracking-widest border border-slate-700"
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-slate-50 transition-all text-[10px] font-bold uppercase tracking-widest border border-slate-700"
                         >
                           <RefreshCw size={14} />
                           Switch
@@ -923,6 +891,20 @@ export function Profile() {
         onConfirm={confirmRemoveMember}
         onCancel={() => setConfirmRemove({ isOpen: false, userId: '', name: '' })}
       />
+      {/* Toast Notification */}
+      <AnimatePresence>
+        {saveToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 bg-green-500 text-slate-950 px-6 py-3 rounded-2xl shadow-xl font-bold flex items-center gap-2 z-50 w-max max-w-[90vw]"
+          >
+            <Zap size={20} />
+            Season settings saved successfully!
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

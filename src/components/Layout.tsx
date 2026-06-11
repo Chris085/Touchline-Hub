@@ -10,8 +10,6 @@ import {
   UserX, 
   Shield, 
   User, 
-  Newspaper, 
-  MessageSquare,
   Menu,
   X,
   Bell,
@@ -23,22 +21,24 @@ import {
   CreditCard,
   ChevronRight,
   Wallet,
-  BookOpen
+  BookOpen,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ConfirmModal } from './ConfirmModal';
 import { collection, query, where, onSnapshot, limit, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { AnimatePresence, motion } from 'motion/react';
+import { useTheme } from '../contexts/ThemeContext';
 
 export function Layout() {
   const { profile, signOut, deleteProfile, isSubscribed, isAdmin } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeMatch, setActiveMatch] = useState<boolean>(false);
   const [activeVoting, setActiveVoting] = useState<boolean>(false);
-  const [hasUnreadNews, setHasUnreadNews] = useState(false);
-  const [hasUnreadChat, setHasUnreadChat] = useState(false);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -77,66 +77,11 @@ export function Layout() {
       setActiveVoting(!snapshot.empty);
     });
 
-    // Listen for latest news
-    const newsQuery = query(
-      collection(db, 'newsPosts'),
-      where('teamId', '==', profile.teamId),
-      orderBy('createdAt', 'desc'),
-      limit(1)
-    );
-
-    const unsubscribeNews = onSnapshot(newsQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        const latestNews = snapshot.docs[0].data();
-        const lastRead = localStorage.getItem(`lastReadNews_${profile.teamId}`);
-        if (!lastRead || new Date(latestNews.createdAt) > new Date(lastRead)) {
-          if (location.pathname !== '/news') {
-            setHasUnreadNews(true);
-          }
-        }
-      }
-    });
-
-    // Listen for latest chat
-    const chatQuery = query(
-      collection(db, 'chatMessages'),
-      where('teamId', '==', profile.teamId),
-      orderBy('createdAt', 'desc'),
-      limit(1)
-    );
-
-    const unsubscribeChat = onSnapshot(chatQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        const latestChat = snapshot.docs[0].data();
-        const lastRead = localStorage.getItem(`lastReadChat_${profile.teamId}`);
-        if (!lastRead || new Date(latestChat.createdAt) > new Date(lastRead)) {
-          if (location.pathname !== '/chat') {
-            setHasUnreadChat(true);
-          }
-        }
-      }
-    });
-
     return () => {
       unsubscribeMatches();
       unsubscribeVoting();
-      unsubscribeNews();
-      unsubscribeChat();
     };
   }, [profile?.teamId, location.pathname]);
-
-  // Mark as read when navigating
-  useEffect(() => {
-    if (!profile?.teamId) return;
-    if (location.pathname === '/news') {
-      localStorage.setItem(`lastReadNews_${profile.teamId}`, new Date().toISOString());
-      setHasUnreadNews(false);
-    }
-    if (location.pathname === '/chat') {
-      localStorage.setItem(`lastReadChat_${profile.teamId}`, new Date().toISOString());
-      setHasUnreadChat(false);
-    }
-  }, [location.pathname, profile?.teamId]);
 
   const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
 
@@ -189,8 +134,6 @@ export function Layout() {
     { name: 'Payments', path: '/payments', icon: Wallet, coachOnly: true },
     { name: 'Squad', path: '/squad', icon: Users },
     { name: 'Schedule', path: '/', icon: Calendar, alwaysShow: true },
-    { name: 'News', path: '/news', icon: Newspaper, hasBadge: hasUnreadNews },
-    { name: 'Chat', path: '/chat', icon: MessageSquare, hasBadge: hasUnreadChat },
     { name: 'Learning', path: '/learning', icon: BookOpen },
     { name: 'Features', path: '/features', icon: LayoutGrid },
     { name: 'Notes', path: '/notes', icon: FileText, coachOnly: true },
@@ -243,35 +186,32 @@ export function Layout() {
       {/* Trial Banner */}
       {showTrialBanner && (
         <div className="bg-green-500 text-slate-950 py-1.5 px-4 text-center text-[10px] font-black uppercase tracking-[0.2em] relative z-40">
-          Trial Active: {trialDaysLeft} Days Remaining • <Link to="/upgrade" className="underline hover:text-white transition-colors">Upgrade Now</Link>
+          Trial Active: {trialDaysLeft} Days Remaining • <Link to="/upgrade" className="underline hover:text-slate-50 transition-colors">Upgrade Now</Link>
         </div>
       )}
 
       {/* Header */}
-      <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-30">
+      <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setIsMenuOpen(true)}
-                className="p-2 -ml-2 text-slate-400 hover:text-white transition-colors relative"
+                className="p-2 -ml-2 text-slate-400 hover:text-slate-50 transition-colors relative"
               >
                 <Menu size={24} />
-                {(hasUnreadNews || hasUnreadChat) && (
-                  <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-900"></span>
-                )}
               </button>
               
               <Link to="/" className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
                   <span className="text-slate-950 font-bold text-lg">TH</span>
                 </div>
-                <span className="text-xl font-bold tracking-tight text-white hidden sm:block">The Touchline Hub</span>
+                <span className="text-xl font-bold tracking-tight text-slate-50 hidden sm:block">The Touchline Hub</span>
               </Link>
             </div>
             
             <div className="flex items-center gap-4">
-              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/50 border border-slate-700/50">
+              <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700">
                 {isAdmin ? (
                   <Shield size={14} className="text-purple-400" />
                 ) : profile?.role === 'coach' ? (
@@ -297,23 +237,23 @@ export function Layout() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsMenuOpen(false)}
-              className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40"
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[60]"
             />
             <motion.div
               initial={{ x: '-100%' }}
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-y-0 left-0 w-72 bg-slate-900 border-r border-slate-800 z-50 flex flex-col"
+              className="fixed inset-y-0 left-0 w-72 bg-slate-900 border-r border-slate-800 z-[70] flex flex-col"
             >
               <div className="p-6 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
                     <span className="text-slate-950 font-bold text-lg">TH</span>
                   </div>
-                  <span className="font-bold text-white">Menu</span>
+                  <span className="font-bold text-slate-50">Menu</span>
                 </div>
-                <button onClick={() => setIsMenuOpen(false)} className="text-slate-400 hover:text-white">
+                <button onClick={() => setIsMenuOpen(false)} className="text-slate-400 hover:text-slate-50">
                   <X size={24} />
                 </button>
               </div>
@@ -329,7 +269,7 @@ export function Layout() {
                       <User size={20} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-white truncate">{profile?.displayName || 'User'}</p>
+                      <p className="text-sm font-bold text-slate-50 truncate">{profile?.displayName || 'User'}</p>
                       <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
                         {isAdmin ? 'Admin' : profile?.role}
                       </p>
@@ -350,7 +290,7 @@ export function Layout() {
                         className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
                           isActive 
                             ? 'bg-green-500/10 text-green-400' 
-                            : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                            : 'text-slate-400 hover:bg-slate-800 hover:text-slate-50'
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -363,10 +303,22 @@ export function Layout() {
                       </Link>
                     );
                   })}
+                  
+                  {/* Theme Toggle in Scrollable Area */}
+                  <button
+                    onClick={toggleTheme}
+                    className="flex items-center justify-between w-full px-4 py-3 mt-4 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-slate-50 transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      {theme === 'dark' ? <Moon size={20} className="text-slate-400 group-hover:text-blue-400" /> : <Sun size={20} className="text-slate-400 group-hover:text-yellow-400" />}
+                      <span className="font-medium">Theme</span>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-wider font-bold bg-slate-800 px-2 py-1 rounded-lg group-hover:bg-slate-700 transition-colors">{theme}</span>
+                  </button>
                 </nav>
               </div>
 
-              <div className="p-4 border-t border-slate-800 space-y-4">
+              <div className="p-4 border-t border-slate-800 space-y-4 shrink-0 pb-safe">
                 {(profile?.role === 'coach' || isAdmin) && (
                   <div className="px-4 py-4 bg-slate-800/50 rounded-2xl border border-slate-700/50">
                     <div className="flex items-center justify-between mb-3">
@@ -377,12 +329,12 @@ export function Layout() {
                     {profile?.subscriptionStatus === 'active' || isAdmin ? (
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                        <p className="text-sm font-bold text-white">Premium Active</p>
+                        <p className="text-sm font-bold text-slate-50">Premium Active</p>
                       </div>
                     ) : trialDaysLeft > 0 ? (
                       <div className="space-y-3">
                         <div className="flex justify-between items-end">
-                          <p className="text-lg font-black text-white leading-none">{trialDaysLeft} Days</p>
+                          <p className="text-lg font-black text-slate-50 leading-none">{trialDaysLeft} Days</p>
                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Trial Remaining</p>
                         </div>
                         <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
@@ -427,7 +379,7 @@ export function Layout() {
                   )}
                   <button
                     onClick={signOut}
-                    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
+                    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-slate-50 transition-all"
                   >
                     <LogOut size={20} />
                     <span className="font-medium">Sign Out</span>
@@ -452,7 +404,7 @@ export function Layout() {
       </main>
 
       {/* Dynamic Bottom Nav */}
-      <nav className="fixed bottom-0 w-full bg-slate-900/80 backdrop-blur-lg border-t border-slate-800 pb-safe z-30">
+      <nav className="fixed bottom-0 w-full bg-slate-950 border-t border-slate-800 pb-safe z-50">
         <div className="flex justify-around items-center h-16 max-w-lg mx-auto">
           {bottomNavItems.map((item) => {
             const Icon = item.icon;

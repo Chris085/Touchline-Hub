@@ -79,10 +79,10 @@ export function Paywall() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 relative">
+    <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col items-center justify-center p-6 relative">
       <button 
         onClick={() => navigate(-1)}
-        className="absolute top-8 right-8 p-3 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700 transition-all z-50"
+        className="absolute top-8 right-8 p-3 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-50 hover:border-slate-700 transition-all z-50"
         title="Close"
       >
         <X size={24} />
@@ -173,13 +173,13 @@ export function Paywall() {
                     placeholder="Enter Coach Code"
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-4 pl-12 pr-4 text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-green-500/50 transition-all"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-4 pl-12 pr-4 text-slate-50 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-green-500/50 transition-all"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={codeLoading || !code.trim()}
-                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-50 font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
                 >
                   {codeLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Apply Code'}
                 </button>

@@ -58,29 +58,10 @@ export async function seedData(teamId: string) {
     await addDoc(votesRef, { teamId, matchId: match.id, playerId: playerDocs[8].id, userId: 'user1' });
     await addDoc(votesRef, { teamId, matchId: match.id, playerId: playerDocs[9].id, userId: 'user2' });
   }
-
-  // Add news post
-  const newsRef = collection(db, 'newsPosts');
-  await addDoc(newsRef, {
-    teamId,
-    title: 'Season Update',
-    content: 'We have played 3 matches so far. Keep up the good work!',
-    createdAt: new Date().toISOString(),
-    authorId: 'system'
-  });
-
-  // Add chat message
-  const chatRef = collection(db, 'chatMessages');
-  await addDoc(chatRef, {
-    teamId,
-    senderId: 'system',
-    text: 'Well done in the recent matches!',
-    createdAt: new Date().toISOString()
-  });
 }
 
 export async function removeAllSeedData(teamId: string) {
-  const collections = ['players', 'matches', 'attendances', 'motmVotes', 'newsPosts', 'chatMessages'];
+  const collections = ['players', 'matches', 'attendances', 'motmVotes'];
   
   for (const colName of collections) {
     const q = query(collection(db, colName), where('teamId', '==', teamId));

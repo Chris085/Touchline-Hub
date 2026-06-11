@@ -22,6 +22,8 @@ interface MatchEvent {
 
 import { ConfirmModal } from '../components/ConfirmModal';
 import { triggerNotification } from '../lib/notifications';
+import { LivePitchView, Player as PitchPlayer, PITCH_SPOTS } from '../components/LivePitchView';
+import { logEvent } from '../services/eventLogging';
 
 export function MatchController() {
   const { profile, isAdmin } = useAuth();
@@ -33,6 +35,7 @@ export function MatchController() {
   const [players, setPlayers] = useState<any[]>([]);
   const [activeMatch, setActiveMatch] = useState<any | null>(null);
   const [timer, setTimer] = useState(0); // in seconds
+  const [activeFormationId, setActiveFormationId] = useState<string | null>(null);
   const [team, setTeam] = useState<any>(null);
   const [showEventModal, setShowEventModal] = useState<'goal' | 'sub' | 'yellow' | 'red' | null>(null);
   const [subPlayerOff, setSubPlayerOff] = useState<any | null>(null);
@@ -54,6 +57,17 @@ export function MatchController() {
 
   const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (showEventModal || showNoteModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showEventModal, showNoteModal]);
 
   const [preMatch, setPreMatch] = useState(false);
   const [availabilities, setAvailabilities] = useState<Record<string, any>>({});
@@ -271,15 +285,29 @@ export function MatchController() {
     }
   };
 
+  const maxPlayersAllowed = parseInt(team?.maxMatchPlayers?.toString() || '16', 10);
+
   const toggleStartingPlayer = (playerId: string) => {
-    setStartingLineup(prev => 
-      prev.includes(playerId) ? prev.filter(id => id !== playerId) : [...prev, playerId]
-    );
+    setStartingLineup(prev => {
+      if (prev.includes(playerId)) {
+        return prev.filter(id => id !== playerId);
+      }
+      if (prev.length >= maxPlayersAllowed) {
+        alert(`You can only select a maximum of ${maxPlayersAllowed} players`);
+        return prev;
+      }
+      return [...prev, playerId];
+    });
   };
 
   const handleStartMatch = async () => {
     if (!activeMatch || !isCoach) return;
     
+    if (preMatch && startingLineup.length > maxPlayersAllowed) {
+      alert(`You cannot start the match with more than ${maxPlayersAllowed} players.`);
+      return;
+    }
+
     const confirmedPlayers = players.filter(p => availabilities[p.id]?.status === 'going');
     const bench = confirmedPlayers.filter(p => !startingLineup.includes(p.id)).map(p => p.id);
 
@@ -365,10 +393,18 @@ export function MatchController() {
           }
           
           if (isLastHalf) {
+            const scoreUs = activeMatch.scoreUs || 0;
+            const scoreThem = activeMatch.scoreThem || 0;
+            const matchResult = scoreUs > scoreThem ? 'win' : scoreUs < scoreThem ? 'loss' : 'draw';
+            
             updates.status = 'completed';
             updates.timerAccumulated = currentAccumulated;
             updates.half2Duration = currentAccumulated - ((team?.halfDuration || 0) * 60);
             updates.isPotmVotingOpen = false;
+            updates.result = matchResult;
+            updates.score = `${scoreUs}-${scoreThem}`;
+            updates.seasonId = team?.seasonTag || activeMatch.season || '';
+            updates.summary = activeMatch.summary || '';
 
             // Trigger Notification
             await triggerNotification({
@@ -438,11 +474,21 @@ export function MatchController() {
         // Let's do it manually
         const currentPitch = activeMatch.onPitch || [];
         const currentBench = activeMatch.onBench || [];
-        updates.onPitch = currentPitch.filter((id: string) => id !== player.id).concat(secondaryPlayer.id);
+        updates.onPitch = currentPitch.map((id: string) => id === player.id ? secondaryPlayer.id : id);
         updates.onBench = currentBench.filter((id: string) => id !== secondaryPlayer.id).concat(player.id);
       }
 
       await updateDoc(doc(db, 'matches', activeMatch.id), updates);
+      
+      logEvent(activeMatch.id, {
+        type: showEventModal,
+        team: showEventModal === 'goal' && player.id === 'own_goal' ? 'them' : 'us',
+        playerId: player.id,
+        ...(secondaryPlayer && { subPlayerId: secondaryPlayer.id }),
+        minute: Math.floor(timer / 60),
+        formationId: activeFormationId || "default_formation"
+      });
+
       setShowEventModal(null);
       setSubPlayerOff(null);
       setGoalScorer(null);
@@ -465,6 +511,14 @@ export function MatchController() {
       await updateDoc(doc(db, 'matches', activeMatch.id), {
         scoreThem: (activeMatch.scoreThem || 0) + 1,
         events: arrayUnion(newEvent)
+      });
+      
+      logEvent(activeMatch.id, {
+        type: 'goal',
+        team: 'them',
+        playerId: 'unknown',
+        minute: Math.floor(timer / 60),
+        formationId: activeFormationId || "default_formation"
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
@@ -525,7 +579,7 @@ export function MatchController() {
             // Reverse sub
             const currentPitch = activeMatch.onPitch || [];
             const currentBench = activeMatch.onBench || [];
-            updates.onPitch = currentPitch.filter((id: string) => id !== event.subPlayerId).concat(event.playerId);
+            updates.onPitch = currentPitch.map((id: string) => id === event.subPlayerId ? event.playerId : id);
             updates.onBench = currentBench.filter((id: string) => id !== event.playerId).concat(event.subPlayerId);
           }
 
@@ -606,14 +660,23 @@ export function MatchController() {
       message: 'Are you sure you want to mark this match as completed? This will save the current score and events.',
       onConfirm: async () => {
         try {
+          const scoreUs = activeMatch.scoreUs || 0;
+          const scoreThem = activeMatch.scoreThem || 0;
+          const matchResult = scoreUs > scoreThem ? 'win' : scoreUs < scoreThem ? 'loss' : 'draw';
+          const matchScore = `${scoreUs}-${scoreThem}`;
+          
           await updateDoc(doc(db, 'matches', activeMatch.id), {
             status: 'completed',
             isTimerRunning: false,
             timerStartTime: null,
             timerAccumulated: 0,
             currentHalf: 2,
-            scoreUs: activeMatch.scoreUs || 0,
-            scoreThem: activeMatch.scoreThem || 0,
+            scoreUs: scoreUs,
+            scoreThem: scoreThem,
+            result: matchResult,
+            score: matchScore,
+            seasonId: team?.seasonTag || activeMatch.season || '',
+            summary: activeMatch.summary || '',
             isPotmVotingOpen: false
           });
           closeConfirmModal();
@@ -640,7 +703,7 @@ export function MatchController() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
         <Activity size={48} className="text-slate-700 mb-4" />
-        <h2 className="text-xl font-bold text-white mb-2">Access Restricted</h2>
+        <h2 className="text-xl font-bold text-slate-50 mb-2">Access Restricted</h2>
         <p className="text-slate-400">Please log in as a coach or parent to view matches.</p>
       </div>
     );
@@ -653,8 +716,8 @@ export function MatchController() {
       <div className="space-y-6 max-w-2xl mx-auto">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-white">Starting Lineup</h2>
-            <button onClick={() => setActiveMatch(null)} className="text-slate-400 hover:text-white">
+            <h2 className="text-xl font-bold text-slate-50">Starting Lineup</h2>
+            <button onClick={() => setActiveMatch(null)} className="text-slate-400 hover:text-slate-50">
               Cancel
             </button>
           </div>
@@ -662,30 +725,51 @@ export function MatchController() {
           <div className="mb-6">
             {isCoach ? (
               <>
-                <p className="text-slate-400 text-sm mb-4">Select the players starting the match. Unselected players will be on the bench.</p>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-slate-400 text-sm">Select the players starting the match. Unselected players will be on the bench.</p>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                    startingLineup.length > maxPlayersAllowed 
+                      ? 'bg-red-500/20 text-red-500' 
+                      : startingLineup.length === maxPlayersAllowed
+                        ? 'bg-yellow-500/20 text-yellow-500'
+                        : 'bg-green-500/20 text-green-500'
+                  }`}>
+                    {startingLineup.length} / {maxPlayersAllowed} Selected
+                  </span>
+                </div>
                 <div className="space-y-2">
-                  {confirmedPlayers.map(player => (
+                  {confirmedPlayers.map(player => {
+                    const isSelected = startingLineup.includes(player.id);
+                    const isMaxedOut = !isSelected && startingLineup.length >= maxPlayersAllowed;
+                    
+                    return (
                     <button
                       key={player.id}
                       onClick={() => toggleStartingPlayer(player.id)}
+                      disabled={isMaxedOut}
                       className={`w-full text-left p-4 rounded-xl font-medium transition-colors flex justify-between items-center ${
-                        startingLineup.includes(player.id) ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-slate-800 text-white border border-slate-700'
+                        isSelected 
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/50' 
+                          : isMaxedOut
+                            ? 'bg-slate-800/50 text-slate-600 border border-slate-800 cursor-not-allowed opacity-50'
+                            : 'bg-slate-800 text-slate-50 border border-slate-700'
                       }`}
                     >
                       {player.name}
                       <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                        startingLineup.includes(player.id) ? 'border-green-500 bg-green-500' : 'border-slate-600'
+                        isSelected ? 'border-green-500 bg-green-500' : isMaxedOut ? 'border-slate-700' : 'border-slate-600'
                       }`}>
-                        {startingLineup.includes(player.id) && <div className="w-2 h-2 bg-slate-900 rounded-full" />}
+                        {isSelected && <div className="w-2 h-2 bg-slate-900 rounded-full" />}
                       </div>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             ) : (
               <div className="text-center py-8">
                 <Clock size={48} className="text-slate-700 mx-auto mb-4" />
-                <h3 className="text-lg font-bold text-white mb-2">Match Not Started</h3>
+                <h3 className="text-lg font-bold text-slate-50 mb-2">Match Not Started</h3>
                 <p className="text-slate-400">The coach hasn't started the live match controller yet. Check back once the match kicks off!</p>
               </div>
             )}
@@ -709,10 +793,94 @@ export function MatchController() {
   }
 
   if (activeMatch && !preMatch) {
+    const isSuspended = (playerId: string) => activeMatch?.events?.some((e: MatchEvent) => e.type === 'red' && e.playerId === playerId);
+
     const onPitchPlayers = (activeMatch.onPitch && activeMatch.onPitch.length > 0) 
-      ? players.filter(p => activeMatch.onPitch.includes(p.id))
-      : players;
-    const onBenchPlayers = players.filter(p => (activeMatch.onBench || []).includes(p.id));
+      ? activeMatch.onPitch.map((id: string) => players.find(p => p.id === id)).filter((p: any) => p && !isSuspended(p.id))
+      : players.filter(p => !isSuspended(p.id));
+    const onBenchPlayers = players.filter(p => (activeMatch.onBench || []).includes(p.id) && !isSuspended(p.id));
+
+    const pitchPlayersData: PitchPlayer[] = onPitchPlayers.map((p, idx) => {
+      const originalIdx = (activeMatch.onPitch || []).indexOf(p.id);
+      const effectiveIdx = originalIdx !== -1 ? originalIdx : idx;
+      return {
+        id: p.id,
+        name: p.name,
+        position: p.position || 'Unknown',
+        x: activeMatch.customPositions?.[effectiveIdx]?.x ?? PITCH_SPOTS[effectiveIdx % PITCH_SPOTS.length]?.x ?? 50,
+        y: activeMatch.customPositions?.[effectiveIdx]?.y ?? PITCH_SPOTS[effectiveIdx % PITCH_SPOTS.length]?.y ?? 50,
+        isOnPitch: true
+      };
+    });
+
+    const benchPlayersData: PitchPlayer[] = onBenchPlayers.map(p => ({
+      id: p.id,
+      name: p.name,
+      position: p.position || 'Unknown',
+      x: 0,
+      y: 0,
+      isOnPitch: false
+    }));
+
+    const handlePitchMove = async (playerId: string, x: number, y: number) => {
+      if (!isCoach) return;
+      const idx = (activeMatch.onPitch || []).indexOf(playerId);
+      if (idx !== -1) {
+        try {
+          const currentCustomPositions = activeMatch.customPositions || {};
+          await updateDoc(doc(db, 'matches', activeMatch.id), {
+            [`customPositions.${idx}`]: { x, y }
+          });
+          setActiveFormationId(`formation_${Date.now()}`);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
+        }
+      }
+    };
+
+    const handlePitchSubstitution = async (playerOffId: string, playerOnId: string) => {
+      if (!activeMatch || !isCoach) return;
+      const playerOff = players.find(p => p.id === playerOffId);
+      const playerOn = players.find(p => p.id === playerOnId);
+      
+      if (!playerOff || !playerOn) return;
+
+      const eventTime = formatTime(timer);
+      const newEvent: MatchEvent = {
+        id: Date.now().toString(),
+        type: 'sub',
+        playerId: playerOff.id,
+        playerName: playerOff.name,
+        subPlayerId: playerOn.id,
+        subPlayerName: playerOn.name,
+        time: eventTime
+      };
+
+      try {
+        const currentPitch = activeMatch.onPitch || [];
+        const currentBench = activeMatch.onBench || [];
+        
+        const updates: any = {
+          events: arrayUnion(newEvent),
+          onPitch: currentPitch.map((id: string) => id === playerOffId ? playerOnId : id),
+          onBench: currentBench.filter((id: string) => id !== playerOnId).concat(playerOffId)
+        };
+
+        await updateDoc(doc(db, 'matches', activeMatch.id), updates);
+        
+        logEvent(activeMatch.id, {
+          type: 'sub',
+          team: 'us',
+          playerId: playerOffId,
+          subPlayerId: playerOnId,
+          minute: Math.floor(timer / 60),
+          formationId: activeFormationId || "default_formation"
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);
+      }
+    };
+
     const { nominalTime, addedTime } = getTimerDisplay(timer);
 
     const getParentsPotmWinner = () => {
@@ -745,7 +913,7 @@ export function MatchController() {
         {matchIdParam && (
           <button
             onClick={() => navigate(`/schedule/${matchIdParam}`)}
-            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-2"
+            className="flex items-center gap-2 text-slate-400 hover:text-slate-50 transition-colors mb-2"
           >
             <ArrowLeft size={20} />
             Back to Match Details
@@ -782,7 +950,7 @@ export function MatchController() {
           <div className="flex justify-between items-center px-4 mb-8">
             <div className="text-center flex-1">
               <div className="text-sm text-slate-400 uppercase tracking-widest mb-2">Us</div>
-              <div className="text-6xl font-black text-white">{activeMatch.scoreUs || 0}</div>
+              <div className="text-6xl font-black text-slate-50">{activeMatch.scoreUs || 0}</div>
             </div>
             <div className="text-4xl font-black text-slate-700 px-4">-</div>
             <div className="text-center flex-1">
@@ -792,7 +960,7 @@ export function MatchController() {
                     type="text"
                     value={editOpponentName}
                     onChange={(e) => setEditOpponentName(e.target.value)}
-                    className="w-24 bg-slate-800 border-none rounded px-2 py-1 text-sm text-white text-center uppercase tracking-widest focus:ring-1 focus:ring-green-500"
+                    className="w-24 bg-slate-800 border-none rounded px-2 py-1 text-sm text-slate-50 text-center uppercase tracking-widest focus:ring-1 focus:ring-green-500"
                     placeholder="Opponent"
                     autoFocus
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveOpponent()}
@@ -803,7 +971,7 @@ export function MatchController() {
                 </div>
               ) : (
                 <div 
-                  className="text-sm text-slate-400 uppercase tracking-widest mb-2 cursor-pointer hover:text-white transition-colors flex items-center justify-center gap-1 group break-words"
+                  className="text-sm text-slate-400 uppercase tracking-widest mb-2 cursor-pointer hover:text-slate-50 transition-colors flex items-center justify-center gap-1 group break-words"
                   onClick={() => {
                     if (isCoach) {
                       setEditOpponentName(activeMatch.opponent || '');
@@ -815,7 +983,7 @@ export function MatchController() {
                   {isCoach && <Edit2 size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
                 </div>
               )}
-              <div className="text-6xl font-black text-white">{activeMatch.scoreThem || 0}</div>
+              <div className="text-6xl font-black text-slate-50">{activeMatch.scoreThem || 0}</div>
             </div>
           </div>
 
@@ -856,7 +1024,7 @@ export function MatchController() {
                   </button>
                   <button
                     onClick={handleEndHalf}
-                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 border border-slate-700"
+                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-50 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 border border-slate-700"
                   >
                     <Clock size={20} />
                     {activeMatch.currentHalf === 1 ? 'END HALF' : 'END MATCH'}
@@ -888,6 +1056,17 @@ export function MatchController() {
           )}
         </div>
 
+        {/* Live Pitch View */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+          <LivePitchView 
+            initialPitchPlayers={pitchPlayersData} 
+            initialBenchPlayers={benchPlayersData}
+            onSubstitute={handlePitchSubstitution}
+            onMove={handlePitchMove}
+            isCoach={isCoach}
+          />
+        </div>
+
         {/* Action Buttons */}
         {isCoach && (
           <div className="grid grid-cols-2 gap-4">
@@ -900,14 +1079,14 @@ export function MatchController() {
             </button>
             <button
               onClick={handleOpponentGoal}
-              className="bg-slate-800 hover:bg-slate-700 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95"
+              className="bg-slate-800 hover:bg-slate-700 text-slate-50 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95"
             >
               <Goal size={32} className="text-slate-500" />
               <span className="text-lg uppercase tracking-wider">Their Goal</span>
             </button>
             <button
               onClick={() => setShowEventModal('sub')}
-              className="col-span-2 bg-blue-500 hover:bg-blue-400 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-blue-500/20"
+              className="col-span-2 bg-blue-500 hover:bg-blue-400 text-slate-50 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-blue-500/20"
             >
               <ArrowLeftRight size={32} />
               <span className="text-lg uppercase tracking-wider">Substitution</span>
@@ -921,14 +1100,14 @@ export function MatchController() {
             </button>
             <button
               onClick={() => setShowEventModal('red')}
-              className="bg-red-500 hover:bg-red-400 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-red-500/20"
+              className="bg-red-500 hover:bg-red-400 text-slate-50 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-red-500/20"
             >
               <UserMinus size={32} />
               <span className="text-lg uppercase tracking-wider">Red Card</span>
             </button>
             <button
               onClick={() => setShowNoteModal(true)}
-              className="col-span-2 bg-slate-800 hover:bg-slate-700 text-white p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 border border-slate-700"
+              className="col-span-2 bg-slate-800 hover:bg-slate-700 text-slate-50 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 border border-slate-700"
             >
               <FileText size={32} className="text-green-500" />
               <span className="text-lg uppercase tracking-wider">Match Notes</span>
@@ -941,7 +1120,7 @@ export function MatchController() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Shield className="text-yellow-500" size={20} />
-              <h3 className="text-lg font-bold text-white">Player of the Match</h3>
+              <h3 className="text-lg font-bold text-slate-50">Player of the Match</h3>
             </div>
             {isCoach && (
               <button
@@ -1061,7 +1240,7 @@ export function MatchController() {
 
         {/* Event Log */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <h3 className="text-lg font-bold text-white mb-4">Match Timeline</h3>
+          <h3 className="text-lg font-bold text-slate-50 mb-4">Match Timeline</h3>
           <div className="space-y-3">
             {(!activeMatch.events || activeMatch.events.length === 0) ? (
               <p className="text-slate-500 text-sm text-center py-4">No events recorded yet.</p>
@@ -1077,7 +1256,7 @@ export function MatchController() {
                     {event.type === 'yellow' && <div className="w-3 h-4 bg-yellow-500 rounded-sm" />}
                     {event.type === 'red' && <div className="w-3 h-4 bg-red-500 rounded-sm" />}
                     
-                    <span className="text-white font-medium">
+                    <span className="text-slate-50 font-medium">
                       {event.type === 'opponent_goal' ? 'Opponent Goal' : event.playerName}
                       {event.isOwnGoal && (
                         <span className="ml-2 px-1.5 py-0.5 bg-amber-500/20 text-amber-500 text-[10px] font-bold rounded border border-amber-500/30">
@@ -1105,20 +1284,20 @@ export function MatchController() {
 
         {/* Player Selection Modal */}
         {showEventModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 pb-safe">
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 overflow-y-auto px-4 py-8 flex justify-center items-start sm:items-center">
             <motion.div 
               initial={{ opacity: 0, y: 100 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl max-h-[80vh] flex flex-col"
+              className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col"
             >
               <div className="flex justify-between items-center mb-6">
                 <div className="flex items-center gap-3">
                   {((showEventModal === 'sub' && subPlayerOff) || (showEventModal === 'goal' && goalScorer)) && (
-                    <button onClick={() => { setSubPlayerOff(null); setGoalScorer(null); }} className="text-slate-500 hover:text-white transition-colors">
+                    <button onClick={() => { setSubPlayerOff(null); setGoalScorer(null); }} className="text-slate-500 hover:text-slate-50 transition-colors">
                       <ArrowLeft size={24} />
                     </button>
                   )}
-                  <h2 className="text-xl font-bold text-white uppercase tracking-wider">
+                  <h2 className="text-xl font-bold text-slate-50 uppercase tracking-wider">
                     {showEventModal === 'sub' && !subPlayerOff ? 'Select Player Coming OFF' :
                      showEventModal === 'sub' && subPlayerOff ? 'Select Player Coming ON' :
                      showEventModal === 'goal' && !goalScorer ? 'Select Goal Scorer' :
@@ -1126,7 +1305,7 @@ export function MatchController() {
                      `Select Player for ${showEventModal}`}
                   </h2>
                 </div>
-                <button onClick={() => { setShowEventModal(null); setSubPlayerOff(null); setGoalScorer(null); setGoalDescription(''); }} className="text-slate-500 hover:text-white">
+                <button onClick={() => { setShowEventModal(null); setSubPlayerOff(null); setGoalScorer(null); setGoalDescription(''); }} className="text-slate-500 hover:text-slate-50">
                   <Square size={24} />
                 </button>
               </div>
@@ -1140,7 +1319,7 @@ export function MatchController() {
                     value={goalDescription}
                     onChange={(e) => setGoalDescription(e.target.value)}
                     placeholder="E.g. Great header from a corner..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 resize-none h-20"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/50 resize-none h-20"
                   />
                 </div>
               )}
@@ -1152,7 +1331,7 @@ export function MatchController() {
                     <button
                       key={player.id}
                       onClick={() => handleAddEvent(subPlayerOff, player)}
-                      className="w-full text-left bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
+                      className="w-full text-left bg-slate-800 hover:bg-slate-700 text-slate-50 p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
                     >
                       {player.name}
                       <ArrowLeftRight size={18} className="text-blue-400" />
@@ -1171,7 +1350,7 @@ export function MatchController() {
                       <button
                         key={player.id}
                         onClick={() => handleAddEvent(goalScorer, player)}
-                        className="w-full text-left bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
+                        className="w-full text-left bg-slate-800 hover:bg-slate-700 text-slate-50 p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
                       >
                         {player.name}
                       </button>
@@ -1201,7 +1380,7 @@ export function MatchController() {
                             handleAddEvent(player);
                           }
                         }}
-                        className="w-full text-left bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
+                        className="w-full text-left bg-slate-800 hover:bg-slate-700 text-slate-50 p-4 rounded-xl font-medium transition-colors flex justify-between items-center"
                       >
                         {player.name}
                         {showEventModal === 'sub' && <ArrowLeftRight size={18} className="text-slate-500" />}
@@ -1231,7 +1410,7 @@ export function MatchController() {
         {/* Match Note Modal */}
         <AnimatePresence>
           {showNoteModal && (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 overflow-y-auto px-4 py-8 flex justify-center items-start sm:items-center">
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -1239,8 +1418,8 @@ export function MatchController() {
                 className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-6"
               >
                 <div className="flex justify-between items-center">
-                  <h2 className="text-xl font-bold text-white">Match Notes</h2>
-                  <button onClick={() => setShowNoteModal(false)} className="text-slate-400 hover:text-white">
+                  <h2 className="text-xl font-bold text-slate-50">Match Notes</h2>
+                  <button onClick={() => setShowNoteModal(false)} className="text-slate-400 hover:text-slate-50">
                     <X size={24} />
                   </button>
                 </div>
@@ -1252,7 +1431,7 @@ export function MatchController() {
                       value={matchNote.content}
                       onChange={(e) => setMatchNote(prev => ({ ...prev, content: e.target.value }))}
                       placeholder="Write your match notes here..."
-                      className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 min-h-[150px]"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 min-h-[150px]"
                     />
                   </div>
 
@@ -1279,7 +1458,7 @@ export function MatchController() {
                 <div className="flex gap-3 pt-4">
                   <button
                     onClick={() => setShowNoteModal(false)}
-                    className="flex-1 px-6 py-3 rounded-2xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition-all"
+                    className="flex-1 px-6 py-3 rounded-2xl bg-slate-800 text-slate-50 font-bold hover:bg-slate-700 transition-all"
                   >
                     Cancel
                   </button>
@@ -1307,12 +1486,12 @@ export function MatchController() {
         <div className="w-10 h-10 bg-green-500/20 rounded-xl flex items-center justify-center">
           <Activity className="text-green-500" size={24} />
         </div>
-        <h1 className="text-2xl font-bold text-white">Live Match Controller</h1>
+        <h1 className="text-2xl font-bold text-slate-50">Live Match Controller</h1>
       </div>
 
       {upcomingMatches.length === 0 ? (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center">
-          <h3 className="text-xl font-semibold text-white mb-2">No active matches</h3>
+          <h3 className="text-xl font-semibold text-slate-50 mb-2">No active matches</h3>
           <p className="text-slate-400">Schedule a match in the Dashboard first.</p>
         </div>
       ) : (
@@ -1330,7 +1509,7 @@ export function MatchController() {
                     </span>
                   )}
                 </div>
-                <h3 className="text-xl font-bold text-white mb-1">vs {match.opponent}</h3>
+                <h3 className="text-xl font-bold text-slate-50 mb-1">vs {match.opponent}</h3>
                 <p className="text-slate-400 text-sm mb-6">
                   {match.date ? (
                     <>
@@ -1352,7 +1531,7 @@ export function MatchController() {
               ) : (
                 <button
                   onClick={() => handleSelectMatch(match)}
-                  className="w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700"
+                  className="w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 bg-slate-800 hover:bg-slate-700 text-slate-50 border border-slate-700"
                 >
                   <Activity size={20} />
                   VIEW LIVE

@@ -53,7 +53,7 @@ export function ConfirmModal({
               onConfirm();
               onCancel();
             }}
-            className="flex-1 px-4 py-4 rounded-xl font-display italic uppercase font-black text-white bg-red-500 hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 text-xs"
+            className="flex-1 px-4 py-4 rounded-xl font-display italic uppercase font-black text-slate-50 bg-red-500 hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 text-xs"
           >
             {confirmText}
           </button>

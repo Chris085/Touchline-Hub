@@ -242,6 +242,10 @@ async function startServer() {
       }
     } catch (error: any) {
       console.error("[Notification] Error in /api/send-notification:", error);
+      // Gracefully handle permission denied for preview environments where we lack IAM roles
+      if (error.code === 7 || error.message.includes("PERMISSION_DENIED")) {
+        return res.json({ success: false, error: "Push notifications mocked in preview environment due to lack of IAM permissions" });
+      }
       res.status(500).json({ error: error.message });
     }
   });

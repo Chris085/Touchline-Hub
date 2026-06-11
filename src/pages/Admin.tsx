@@ -129,7 +129,7 @@ export function Admin() {
     <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-white">Admin Dashboard</h1>
+          <h1 className="text-3xl font-bold text-slate-50">Admin Dashboard</h1>
           <p className="text-slate-400">Manage coach access codes</p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
@@ -137,7 +137,7 @@ export function Admin() {
             <button
               onClick={() => setCodeType('trial')}
               className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                codeType === 'trial' ? 'bg-green-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                codeType === 'trial' ? 'bg-green-500 text-slate-950' : 'text-slate-400 hover:text-slate-50'
               }`}
             >
               3M Trial
@@ -145,7 +145,7 @@ export function Admin() {
             <button
               onClick={() => setCodeType('full')}
               className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                codeType === 'full' ? 'bg-green-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                codeType === 'full' ? 'bg-green-500 text-slate-950' : 'text-slate-400 hover:text-slate-50'
               }`}
             >
               Full Access
@@ -182,7 +182,7 @@ export function Admin() {
         <button
           onClick={populateDummyData}
           disabled={populating}
-          className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
+          className="bg-slate-800 hover:bg-slate-700 text-slate-50 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
         >
           {populating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
           Populate Dummy Data
@@ -230,7 +230,7 @@ export function Admin() {
                 <div className="flex items-center justify-end gap-2 border-t border-slate-800/50 sm:border-0 pt-3 sm:pt-0">
                   <button
                     onClick={() => copyToClipboard(code.code)}
-                    className="flex-1 sm:flex-none p-2.5 sm:p-2 bg-slate-800 sm:bg-transparent rounded-lg sm:rounded-none flex items-center justify-center text-slate-400 hover:text-white transition-colors"
+                    className="flex-1 sm:flex-none p-2.5 sm:p-2 bg-slate-800 sm:bg-transparent rounded-lg sm:rounded-none flex items-center justify-center text-slate-400 hover:text-slate-50 transition-colors"
                     title="Copy Code"
                   >
                     {copied === code.code ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}

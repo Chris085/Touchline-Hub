@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { 
   Trophy, 
@@ -17,7 +17,9 @@ import {
   XCircle,
   MinusCircle,
   ChevronRight,
-  Share2
+  Share2,
+  X,
+  Sparkles
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -39,6 +41,8 @@ import {
 import { format } from 'date-fns';
 
 import { SeasonSummaryModal } from '../components/SeasonSummaryModal';
+import { FormationAnalyticsModal } from '../components/FormationAnalyticsModal';
+import { InsightViewerModal } from '../components/InsightViewerModal';
 
 export function Stats() {
   const { profile } = useAuth();
@@ -47,12 +51,30 @@ export function Stats() {
   const [players, setPlayers] = useState<any[]>([]);
   const [votes, setVotes] = useState<any[]>([]);
   const [attendances, setAttendances] = useState<any[]>([]);
+  const [availabilities, setAvailabilities] = useState<any[]>([]);
+  const [seasonSummaries, setSeasonSummaries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [selectedInsight, setSelectedInsight] = useState<any | null>(null);
   const [activePieIndex, setActivePieIndex] = useState<number | undefined>(undefined);
+  const [teamName, setTeamName] = useState<string>(profile?.joinedTeams?.find(t => t.teamId === profile?.teamId)?.teamName || 'Your Team');
+
+
+  const [seasonId, setSeasonId] = useState<string>('');
 
   useEffect(() => {
     if (!profile?.teamId) return;
+
+    // Fetch Team Name
+    const unsubTeam = onSnapshot(doc(db, 'teams', profile.teamId), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        if (data.name) setTeamName(data.name);
+        if (data.seasonTag) setSeasonId(data.seasonTag);
+      }
+    });
 
     const unsubMatches = onSnapshot(
       query(collection(db, 'matches'), where('teamId', '==', profile.teamId), orderBy('date', 'asc')),
@@ -81,11 +103,26 @@ export function Stats() {
       (error) => handleFirestoreError(error, OperationType.LIST, 'attendances')
     );
 
+    const unsubAvailabilities = onSnapshot(
+      query(collection(db, 'availabilities'), where('teamId', '==', profile.teamId)),
+      (snapshot) => setAvailabilities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
+      (error) => handleFirestoreError(error, OperationType.LIST, 'availabilities')
+    );
+
+    const unsubSummaries = onSnapshot(
+      query(collection(db, 'seasonSummaries'), where('teamId', '==', profile.teamId), orderBy('createdAt', 'desc')),
+      (snapshot) => setSeasonSummaries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
+      (error) => handleFirestoreError(error, OperationType.LIST, 'seasonSummaries')
+    );
+
     return () => {
+      unsubTeam();
       unsubMatches();
       unsubPlayers();
       unsubVotes();
       unsubAttendances();
+      unsubAvailabilities();
+      unsubSummaries();
     };
   }, [profile?.teamId]);
 
@@ -118,8 +155,9 @@ export function Stats() {
       (m.events || []).forEach((event: any) => {
         if (event.type === 'goal') {
           scorers[event.playerId] = (scorers[event.playerId] || 0) + 1;
-          if (event.assistId) {
-            assists[event.assistId] = (assists[event.assistId] || 0) + 1;
+          const assistId = event.assistPlayerId || event.assistId;
+          if (assistId && assistId !== 'none') {
+            assists[assistId] = (assists[assistId] || 0) + 1;
           }
         }
       });
@@ -189,9 +227,74 @@ export function Stats() {
     // Attendance Stats
     const trainingMatches = matches.filter(m => m.type === 'training');
     const totalTraining = trainingMatches.length;
-    const totalAttendanceRecords = attendances.length;
-    const presentCount = attendances.filter(a => a.status === 'present').length;
+    
+    // Calculate combined attendance (both coach attendances and parent availabilities)
+    const allSessionRecords = new Set([
+      ...attendances.map(a => `${a.matchId}_${a.playerId}`),
+      ...availabilities.map(a => `${a.matchId}_${a.playerId}`)
+    ]);
+
+    let presentCount = 0;
+    
+    allSessionRecords.forEach(recordId => {
+      const [matchId, playerId] = recordId.split('_');
+      const att = attendances.find(a => a.matchId === matchId && a.playerId === playerId);
+      const avail = availabilities.find(a => a.matchId === matchId && a.playerId === playerId);
+      
+      if (att) {
+        if (att.status === 'present' || att.status === 'late') presentCount++;
+      } else if (avail) {
+        if (avail.status === 'going') presentCount++;
+      }
+    });
+
+    const totalAttendanceRecords = allSessionRecords.size;
     const attendanceRate = totalAttendanceRecords > 0 ? Math.round((presentCount / totalAttendanceRecords) * 100) : 0;
+
+    const playerAttendanceStats = players.map(p => {
+      let matchPresentCount = 0;
+      let matchTotalCount = 0;
+      let trainingPresentCount = 0;
+      let trainingTotalCount = 0;
+
+      allSessionRecords.forEach(recordId => {
+        const [matchId, playerId] = recordId.split('_');
+        if (playerId !== p.id) return;
+        
+        const match = matches.find(m => m.id === matchId);
+        if (!match) return;
+
+        const att = attendances.find(a => a.matchId === matchId && a.playerId === playerId);
+        const avail = availabilities.find(a => a.matchId === matchId && a.playerId === playerId);
+        
+        let isPresent = false;
+        if (att) {
+          if (att.status === 'present' || att.status === 'late') isPresent = true;
+        } else if (avail) {
+          if (avail.status === 'going') isPresent = true;
+        }
+
+        if (match.type === 'match') {
+          matchTotalCount++;
+          if (isPresent) matchPresentCount++;
+        } else if (match.type === 'training') {
+          trainingTotalCount++;
+          if (isPresent) trainingPresentCount++;
+        }
+      });
+
+      return {
+        id: p.id,
+        name: p.name,
+        matchRate: matchTotalCount > 0 ? Math.round((matchPresentCount / matchTotalCount) * 100) : 0,
+        trainingRate: trainingTotalCount > 0 ? Math.round((trainingPresentCount / trainingTotalCount) * 100) : 0,
+        overallRate: (matchTotalCount + trainingTotalCount) > 0 ? Math.round(((matchPresentCount + trainingPresentCount) / (matchTotalCount + trainingTotalCount)) * 100) : 0,
+        matchPresentCount,
+        matchTotalCount,
+        trainingPresentCount,
+        trainingTotalCount
+      };
+    }).sort((a, b) => b.overallRate - a.overallRate);
 
     // Season Match History
     const seasonAwards = completedMatches.map(m => {
@@ -250,9 +353,10 @@ export function Stats() {
       topParentPotm,
       attendanceRate,
       totalTraining,
-      seasonAwards
+      seasonAwards,
+      playerAttendanceStats
     };
-  }, [matches, players, votes, attendances]);
+  }, [matches, players, votes, attendances, availabilities]);
 
   if (loading) {
     return (
@@ -267,16 +371,25 @@ export function Stats() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-black text-white uppercase italic font-display tracking-tight">Team Statistics</h1>
+          <h1 className="text-3xl font-black text-slate-50 uppercase italic font-display tracking-tight">Team Statistics</h1>
           <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Season Performance Overview</p>
         </div>
-        <button 
-          onClick={() => setShowShareModal(true)}
-          className="flex items-center justify-center gap-2 px-6 py-3 bg-green-500 hover:bg-green-400 text-slate-950 rounded-2xl font-bold transition-all shadow-lg shadow-green-500/20 w-full sm:w-auto"
-        >
-          <Share2 size={18} />
-          Share Summary
-        </button>
+        <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+          <button 
+            onClick={() => setShowAnalyticsModal(true)}
+            className="flex items-center justify-center gap-2 px-6 py-3 bg-purple-500 hover:bg-purple-400 text-slate-950 rounded-2xl font-bold transition-all shadow-lg shadow-purple-500/20 w-full sm:w-auto"
+          >
+            <Sparkles size={18} />
+            AI Tactics
+          </button>
+          <button 
+            onClick={() => setShowShareModal(true)}
+            className="flex items-center justify-center gap-2 px-6 py-3 bg-green-500 hover:bg-green-400 text-slate-950 rounded-2xl font-bold transition-all shadow-lg shadow-green-500/20 w-full sm:w-auto"
+          >
+            <Share2 size={18} />
+            Share Summary
+          </button>
+        </div>
       </div>
 
       {/* Hero Stats */}
@@ -301,6 +414,7 @@ export function Stats() {
           label="Attendance" 
           value={`${stats.attendanceRate}%`} 
           icon={<Users className="text-purple-500" />} 
+          onClick={() => setShowAttendanceModal(true)}
         />
       </div>
 
@@ -311,7 +425,7 @@ export function Stats() {
           animate={{ opacity: 1, y: 0 }}
           className="bg-slate-900/50 border border-slate-800 rounded-[2rem] p-8"
         >
-          <h2 className="text-xl font-black text-white uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
+          <h2 className="text-xl font-black text-slate-50 uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
             <Activity size={24} className="text-green-500" />
             Match Results
           </h2>
@@ -326,7 +440,6 @@ export function Stats() {
                   outerRadius={110}
                   paddingAngle={5}
                   dataKey="value"
-                  activeIndex={activePieIndex}
                   onMouseEnter={(_, index) => setActivePieIndex(index)}
                   onMouseLeave={() => setActivePieIndex(undefined)}
                   style={{ outline: 'none' }}
@@ -356,7 +469,7 @@ export function Stats() {
           transition={{ delay: 0.1 }}
           className="bg-slate-900/50 border border-slate-800 rounded-[2rem] p-8"
         >
-          <h2 className="text-xl font-black text-white uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
+          <h2 className="text-xl font-black text-slate-50 uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
             <TrendingUp size={24} className="text-blue-500" />
             Scoring Trend
           </h2>
@@ -412,7 +525,7 @@ export function Stats() {
         animate={{ opacity: 1, y: 0 }}
         className="bg-slate-900/50 border border-slate-800 rounded-[2rem] p-8"
       >
-        <h2 className="text-xl font-black text-white uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
+        <h2 className="text-xl font-black text-slate-50 uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
           <Calendar size={24} className="text-purple-500" />
           Recent Form
         </h2>
@@ -441,7 +554,7 @@ export function Stats() {
         animate={{ opacity: 1, y: 0 }}
         className="bg-slate-900/50 border border-slate-800 rounded-[2rem] p-8 overflow-hidden"
       >
-        <h2 className="text-xl font-black text-white uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
+        <h2 className="text-xl font-black text-slate-50 uppercase italic font-display tracking-tight mb-6 flex items-center gap-3">
           <Trophy size={24} className="text-yellow-500" />
           Season Match History
         </h2>
@@ -471,7 +584,7 @@ export function Stats() {
                     <span className="text-xs font-bold text-slate-400">{match.date ? format(new Date(match.date), 'MMM d, yyyy') : 'Postponed TBA'}</span>
                   </td>
                   <td className="py-4 px-4">
-                    <span className="text-sm font-black text-white uppercase italic font-display break-words">vs {match.opponent}</span>
+                    <span className="text-sm font-black text-slate-50 uppercase italic font-display break-words">vs {match.opponent}</span>
                   </td>
                   <td className="py-4 px-4 text-center">
                     <span className={`inline-flex items-center justify-center w-8 h-8 rounded-lg font-black text-xs italic font-display ${
@@ -483,7 +596,7 @@ export function Stats() {
                     </span>
                   </td>
                   <td className="py-4 px-4 text-center">
-                    <span className="text-sm font-black text-white italic font-display">{match.score}</span>
+                    <span className="text-sm font-black text-slate-50 italic font-display">{match.score}</span>
                   </td>
                   <td className="py-4 px-4 text-center">
                     <span className={`text-xs font-bold ${
@@ -529,7 +642,7 @@ export function Stats() {
               <div className="flex justify-between items-start">
                 <div className="flex flex-col">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{match.date ? format(new Date(match.date), 'MMM d, yyyy') : 'Postponed TBA'}</span>
-                  <span className="text-sm font-black text-white uppercase italic font-display break-words">vs {match.opponent}</span>
+                  <span className="text-sm font-black text-slate-50 uppercase italic font-display break-words">vs {match.opponent}</span>
                 </div>
                 <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg font-black text-xs italic font-display ${
                   match.result === 'W' ? 'bg-green-500/20 text-green-500' :
@@ -543,7 +656,7 @@ export function Stats() {
               <div className="flex items-center justify-between py-2 border-y border-slate-800/50">
                 <div className="flex flex-col">
                   <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Score</span>
-                  <span className="text-sm font-black text-white italic font-display">{match.score}</span>
+                  <span className="text-sm font-black text-slate-50 italic font-display">{match.score}</span>
                 </div>
                 <div className="flex flex-col items-end">
                   <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Goal Diff</span>
@@ -575,10 +688,54 @@ export function Stats() {
         </div>
       </motion.div>
 
+      {/* Saved AI Insights */}
+      {seasonSummaries.length > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-slate-900/50 border border-slate-800 rounded-[2rem] p-8 overflow-hidden"
+        >
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-black text-slate-50 uppercase italic font-display tracking-tight flex items-center gap-3">
+              <Sparkles size={24} className="text-purple-500" />
+              Saved AI Tactics
+            </h2>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {seasonSummaries.map((summary) => (
+              <div 
+                key={summary.id}
+                onClick={() => setSelectedInsight(summary)}
+                className="bg-slate-800/30 border border-slate-700/50 rounded-2xl p-6 cursor-pointer hover:bg-slate-800/50 hover:border-purple-500/30 transition-all flex flex-col gap-4 group"
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                      {summary.createdAt?.seconds ? format(new Date(summary.createdAt.seconds * 1000), 'MMM d, yyyy') : 'Unknown Date'}
+                    </span>
+                    <h3 className="text-lg font-black text-slate-50 uppercase italic font-display flex items-center gap-2 group-hover:text-purple-400 transition-colors">
+                      AI Insight
+                      <ChevronRight size={16} className="opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-0 transition-all" />
+                    </h3>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center text-purple-500">
+                    <Sparkles size={14} />
+                  </div>
+                </div>
+                <p className="text-sm text-slate-400 font-medium line-clamp-3">
+                  {summary.content.substring(0, 150)}...
+                </p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       <SeasonSummaryModal
         isOpen={showShareModal}
         onClose={() => setShowShareModal(false)}
-        teamName={profile?.teamName || 'Your Team'}
+        teamName={teamName}
         stats={{
           totalMatches: stats.totalMatches,
           wins: stats.wins,
@@ -594,15 +751,42 @@ export function Stats() {
           matchHistory: stats.seasonAwards
         }}
       />
+
+      <AttendanceModal 
+        isOpen={showAttendanceModal}
+        onClose={() => setShowAttendanceModal(false)}
+        stats={{
+          totalMatches: stats.totalMatches,
+          totalTraining: stats.totalTraining
+        }}
+        playersData={stats.playerAttendanceStats}
+      />
+
+      <FormationAnalyticsModal
+        isOpen={showAnalyticsModal}
+        onClose={() => setShowAnalyticsModal(false)}
+        seasonId={seasonId}
+        teamId={profile?.teamId || ''}
+        matches={matches}
+        players={players}
+        stats={stats}
+      />
+
+      <InsightViewerModal
+        isOpen={!!selectedInsight}
+        onClose={() => setSelectedInsight(null)}
+        insight={selectedInsight}
+      />
     </div>
   );
 }
 
-function StatCard({ label, value, icon, trend }: { label: string, value: string | number, icon: React.ReactNode, trend?: 'up' | 'down' }) {
+function StatCard({ label, value, icon, trend, onClick }: { label: string, value: string | number, icon: React.ReactNode, trend?: 'up' | 'down', onClick?: () => void }) {
   return (
     <motion.div 
-      whileHover={{ y: -5 }}
-      className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 relative overflow-hidden group"
+      whileHover={onClick ? { y: -5 } : undefined}
+      onClick={onClick}
+      className={`bg-slate-900/50 border border-slate-800 rounded-3xl p-6 relative overflow-hidden group ${onClick ? 'cursor-pointer hover:border-green-500/30' : ''}`}
     >
       <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
         {icon}
@@ -610,7 +794,7 @@ function StatCard({ label, value, icon, trend }: { label: string, value: string 
       <div className="flex flex-col gap-1">
         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</span>
         <div className="flex items-center gap-2">
-          <span className="text-3xl font-black text-white italic font-display">{value}</span>
+          <span className="text-3xl font-black text-slate-50 italic font-display">{value}</span>
           {trend && (
             <div className={trend === 'up' ? 'text-green-500' : 'text-red-500'}>
               {trend === 'up' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
@@ -631,7 +815,7 @@ function Leaderboard({ title, data, icon, unit }: { title: string, data: any[], 
     >
       <div className="flex items-center gap-3 mb-6">
         {icon}
-        <h3 className="text-sm font-black text-white uppercase italic font-display tracking-tight">{title}</h3>
+        <h3 className="text-sm font-black text-slate-50 uppercase italic font-display tracking-tight">{title}</h3>
       </div>
       <div className="space-y-4">
         {data.map((item, i) => (
@@ -645,10 +829,10 @@ function Leaderboard({ title, data, icon, unit }: { title: string, data: any[], 
               }`}>
                 {i + 1}
               </span>
-              <span className="text-sm font-bold text-slate-300 group-hover:text-white transition-colors">{item.name}</span>
+              <span className="text-sm font-bold text-slate-300 group-hover:text-slate-50 transition-colors">{item.name}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-base font-black text-white italic font-display">{item.count}</span>
+              <span className="text-base font-black text-slate-50 italic font-display">{item.count}</span>
               <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">{unit}</span>
             </div>
           </div>
@@ -658,5 +842,109 @@ function Leaderboard({ title, data, icon, unit }: { title: string, data: any[], 
         )}
       </div>
     </motion.div>
+  );
+}
+
+function AttendanceModal({ isOpen, onClose, stats, playersData }: { 
+  isOpen: boolean, 
+  onClose: () => void, 
+  stats: { totalTraining: number, totalMatches: number },
+  playersData: any[] 
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col relative z-10 shadow-2xl"
+      >
+        <div className="p-6 border-b border-slate-800 flex items-start justify-between bg-slate-900/50">
+          <div>
+            <h2 className="text-2xl font-black text-slate-50 uppercase italic font-display tracking-tight flex items-center gap-3">
+              <Users size={28} className="text-purple-500" />
+              Detailed Attendance
+            </h2>
+            <p className="text-slate-400 text-sm font-medium mt-1">Individual player breakdown for matches and training sessions.</p>
+          </div>
+          <button 
+            onClick={onClose}
+            className="w-10 h-10 rounded-full bg-slate-800 text-slate-400 flex flex-col items-center justify-center hover:bg-slate-700 hover:text-slate-50 transition-colors"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-6 flex-1 space-y-6 custom-scrollbar">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+             <div className="bg-slate-800/50 rounded-2xl p-4 flex flex-col items-center text-center justify-center">
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Matches</span>
+                 <span className="text-3xl font-black text-slate-50 font-display italic">{stats.totalMatches}</span>
+             </div>
+             <div className="bg-slate-800/50 rounded-2xl p-4 flex flex-col items-center text-center justify-center">
+                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Training</span>
+                 <span className="text-3xl font-black text-slate-50 font-display italic">{stats.totalTraining}</span>
+             </div>
+          </div>
+
+          <div className="overflow-x-auto w-full custom-scrollbar">
+            <table className="w-full text-left border-collapse min-w-[600px]">
+              <thead>
+                <tr className="border-b border-slate-800/50">
+                  <th className="py-4 px-4 text-[10px] uppercase tracking-widest font-bold text-slate-500 w-1/4">Player</th>
+                  <th className="py-4 px-4 text-[10px] uppercase tracking-widest font-bold text-slate-500 w-1/4">Overall Rate</th>
+                  <th className="py-4 px-4 text-[10px] uppercase tracking-widest font-bold text-slate-500 w-1/4">Matches <span className="text-slate-600 block sm:inline">(Going/Total)</span></th>
+                  <th className="py-4 px-4 text-[10px] uppercase tracking-widest font-bold text-slate-500 w-1/4">Training <span className="text-slate-600 block sm:inline">(Going/Total)</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {playersData.map((p, i) => (
+                  <motion.tr 
+                    key={p.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="border-b border-slate-800/30 hover:bg-slate-800/30 transition-colors"
+                  >
+                    <td className="py-4 px-4 font-bold text-slate-200">{p.name}</td>
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-3">
+                        <div className="text-sm font-black text-slate-50 font-display italic w-10">{p.overallRate}%</div>
+                        <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden w-24">
+                          <div 
+                            className="h-full rounded-full transition-all duration-1000 bg-purple-500" 
+                            style={{ width: `${p.overallRate}%` }} 
+                          />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                       <div className="flex flex-col gap-0.5">
+                         <span className="text-sm font-bold text-slate-300">{p.matchRate}% <span className="text-xs text-slate-500 font-medium">({p.matchPresentCount} / {Math.max(stats.totalMatches, p.matchTotalCount)})</span></span>
+                       </div>
+                    </td>
+                    <td className="py-4 px-4">
+                       <div className="flex flex-col gap-0.5">
+                         <span className="text-sm font-bold text-slate-300">{p.trainingRate}% <span className="text-xs text-slate-500 font-medium">({p.trainingPresentCount} / {Math.max(stats.totalTraining, p.trainingTotalCount)})</span></span>
+                       </div>
+                    </td>
+                  </motion.tr>
+                ))}
+                {playersData.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-slate-500 text-sm italic">
+                      No appearance data found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
 }

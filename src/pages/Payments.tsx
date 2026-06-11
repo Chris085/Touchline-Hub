@@ -324,7 +324,7 @@ export function Payments() {
     <div className="max-w-6xl mx-auto space-y-6 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-slate-50 tracking-tight flex items-center gap-3">
             <Wallet className="text-green-500" size={32} />
             Payments & Subs
           </h1>
@@ -334,20 +334,20 @@ export function Payments() {
         <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'overview' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
           >
             Overview
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'history' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'history' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
           >
             History
           </button>
           {isCoach && (
             <button
               onClick={() => setActiveTab('settings')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
             >
               <Settings size={18} />
             </button>
@@ -364,7 +364,7 @@ export function Payments() {
           <div className="grid md:grid-cols-2 gap-8">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <h3 className="text-lg font-bold text-slate-50 flex items-center gap-2">
                   <DollarSign className="text-green-500" size={20} />
                   Match Fees
                 </h3>
@@ -384,7 +384,7 @@ export function Payments() {
                 <input
                   type="number"
                   placeholder="Amount per match"
-                  className="bg-slate-800 border-none rounded-lg px-4 py-2 text-white w-32 focus:ring-2 focus:ring-green-500"
+                  className="bg-slate-800 border-none rounded-lg px-4 py-2 text-slate-50 w-32 focus:ring-2 focus:ring-green-500"
                   value={team?.paymentSettings?.matchFeeAmount ?? ''}
                   onChange={(e) => handleUpdateSettings({ matchFeeAmount: parseFloat(e.target.value) || 0 })}
                 />
@@ -393,7 +393,7 @@ export function Payments() {
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <h3 className="text-lg font-bold text-slate-50 flex items-center gap-2">
                   <Calendar className="text-blue-500" size={20} />
                   Monthly Subs
                 </h3>
@@ -413,7 +413,7 @@ export function Payments() {
                 <input
                   type="number"
                   placeholder="Amount per month"
-                  className="bg-slate-800 border-none rounded-lg px-4 py-2 text-white w-32 focus:ring-2 focus:ring-blue-500"
+                  className="bg-slate-800 border-none rounded-lg px-4 py-2 text-slate-50 w-32 focus:ring-2 focus:ring-blue-500"
                   value={team?.paymentSettings?.monthlySubAmount ?? ''}
                   onChange={(e) => handleUpdateSettings({ monthlySubAmount: parseFloat(e.target.value) || 0 })}
                 />
@@ -429,7 +429,7 @@ export function Payments() {
           {team?.paymentSettings?.collectMatchFees && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
               <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-                <h3 className="text-lg font-bold text-white">Match Fees & Balances</h3>
+                <h3 className="text-lg font-bold text-slate-50">Match Fees & Balances</h3>
                 <div className="flex items-center gap-4">
                   {isCoach && (
                     <button
@@ -472,7 +472,7 @@ export function Payments() {
                               <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
                                 <User size={16} />
                               </div>
-                              <span className="font-bold text-white">{player.name}</span>
+                              <span className="font-bold text-slate-50">{player.name}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4 text-center font-mono text-slate-300">
@@ -483,7 +483,7 @@ export function Payments() {
                               {isCoach && (
                                 <button 
                                   onClick={() => updateMatchesPlayed(player.id, -1)}
-                                  className="text-slate-600 hover:text-white transition-colors"
+                                  className="text-slate-600 hover:text-slate-50 transition-colors"
                                 >
                                   -
                                 </button>
@@ -492,7 +492,7 @@ export function Payments() {
                               {isCoach && (
                                 <button 
                                   onClick={() => updateMatchesPlayed(player.id, 1)}
-                                  className="text-slate-600 hover:text-white transition-colors"
+                                  className="text-slate-600 hover:text-slate-50 transition-colors"
                                 >
                                   +
                                 </button>
@@ -538,7 +538,7 @@ export function Payments() {
                           <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
                             <User size={16} />
                           </div>
-                          <span className="font-bold text-white">{player.name}</span>
+                          <span className="font-bold text-slate-50">{player.name}</span>
                         </div>
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${getRemainingColor(remaining)}`}>
                           {remaining} games
@@ -548,7 +548,7 @@ export function Payments() {
                       <div className="grid grid-cols-3 gap-4">
                         <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
                           <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Total Paid</p>
-                          <p className="text-lg font-black text-white italic font-display">
+                          <p className="text-lg font-black text-slate-50 italic font-display">
                             {team.paymentSettings.currency}{balance?.totalPaid || 0}
                           </p>
                         </div>
@@ -564,16 +564,16 @@ export function Payments() {
                             {isCoach && (
                               <button 
                                 onClick={() => updateMatchesPlayed(player.id, -1)}
-                                className="w-6 h-6 rounded-lg bg-slate-700 flex items-center justify-center text-white"
+                                className="w-6 h-6 rounded-lg bg-slate-700 flex items-center justify-center text-slate-50"
                               >
                                 -
                               </button>
                             )}
-                            <span className="text-lg font-black text-white italic font-display">{balance?.matchesPlayed || 0}</span>
+                            <span className="text-lg font-black text-slate-50 italic font-display">{balance?.matchesPlayed || 0}</span>
                             {isCoach && (
                               <button 
                                 onClick={() => updateMatchesPlayed(player.id, 1)}
-                                className="w-6 h-6 rounded-lg bg-slate-700 flex items-center justify-center text-white"
+                                className="w-6 h-6 rounded-lg bg-slate-700 flex items-center justify-center text-slate-50"
                               >
                                 +
                               </button>
@@ -602,7 +602,7 @@ export function Payments() {
           {team?.paymentSettings?.collectMonthlySubs && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
               <div className="p-6 border-b border-slate-800">
-                <h3 className="text-lg font-bold text-white">Monthly Subscriptions</h3>
+                <h3 className="text-lg font-bold text-slate-50">Monthly Subscriptions</h3>
               </div>
               <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-left">
@@ -620,7 +620,7 @@ export function Payments() {
                     {players.map(player => (
                       <tr key={player.id} className="hover:bg-slate-800/30 transition-colors">
                         <td className="px-6 py-4">
-                          <span className="font-bold text-white">{player.name}</span>
+                          <span className="font-bold text-slate-50">{player.name}</span>
                         </td>
                         {currentMonths.map(month => {
                           const monthStr = format(month, 'yyyy-MM');
@@ -654,7 +654,7 @@ export function Payments() {
                 {players.map(player => (
                   <div key={player.id} className="p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-white">{player.name}</span>
+                      <span className="font-bold text-slate-50">{player.name}</span>
                     </div>
                     <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
                       {currentMonths.map(month => {
@@ -691,7 +691,7 @@ export function Payments() {
       {activeTab === 'history' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
           <div className="p-6 border-b border-slate-800">
-            <h3 className="text-lg font-bold text-white">Recent Transactions</h3>
+            <h3 className="text-lg font-bold text-slate-50">Recent Transactions</h3>
           </div>
           <div className="divide-y divide-slate-800">
             {transactions.map(tx => {
@@ -703,14 +703,14 @@ export function Payments() {
                       {tx.type === 'match' ? <DollarSign size={20} /> : <Calendar size={20} />}
                     </div>
                     <div>
-                      <div className="font-bold text-white">{player?.name || 'Unknown Player'}</div>
+                      <div className="font-bold text-slate-50">{player?.name || 'Unknown Player'}</div>
                       <div className="text-xs text-slate-500 flex items-center gap-2">
                         <span>{format(new Date(tx.date), 'MMM d, yyyy HH:mm')}</span>
                         {tx.note && <span>• {tx.note}</span>}
                       </div>
                     </div>
                   </div>
-                  <div className="text-lg font-bold text-white">
+                  <div className="text-lg font-bold text-slate-50">
                     {team?.paymentSettings?.currency || '£'}{tx.amount}
                   </div>
                 </div>
@@ -734,15 +734,15 @@ export function Payments() {
               className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
             >
               <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-white">Add Payment</h2>
-                <button onClick={() => setShowAddPayment(null)} className="text-slate-400 hover:text-white">
+                <h2 className="text-lg font-bold text-slate-50">Add Payment</h2>
+                <button onClick={() => setShowAddPayment(null)} className="text-slate-400 hover:text-slate-50">
                   <Plus className="rotate-45" size={24} />
                 </button>
               </div>
               <form onSubmit={handleAddPayment} className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">Player</label>
-                  <div className="p-3 bg-slate-800 rounded-xl text-white font-bold">
+                  <div className="p-3 bg-slate-800 rounded-xl text-slate-50 font-bold">
                     {players.find(p => p.id === showAddPayment)?.name}
                   </div>
                 </div>
@@ -776,7 +776,7 @@ export function Payments() {
                     type="number"
                     required
                     placeholder="0.00"
-                    className="w-full bg-slate-800 border-none rounded-xl p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-green-500 text-2xl font-bold"
+                    className="w-full bg-slate-800 border-none rounded-xl p-4 text-slate-50 placeholder-slate-500 focus:ring-2 focus:ring-green-500 text-2xl font-bold"
                     value={paymentAmount}
                     onChange={(e) => setPaymentAmount(e.target.value)}
                   />
@@ -787,7 +787,7 @@ export function Payments() {
                   <input
                     type="text"
                     placeholder="e.g. Paid for 5 matches"
-                    className="w-full bg-slate-800 border-none rounded-xl p-4 text-white placeholder-slate-500 focus:ring-2 focus:ring-green-500"
+                    className="w-full bg-slate-800 border-none rounded-xl p-4 text-slate-50 placeholder-slate-500 focus:ring-2 focus:ring-green-500"
                     value={paymentNote}
                     onChange={(e) => setPaymentNote(e.target.value)}
                   />

@@ -85,8 +85,11 @@ export const SeasonSummaryModal: React.FC<SeasonSummaryModalProps> = ({ isOpen, 
 🏆 Top Scorers:
 ${stats.topScorers.map(s => `• ${s.name}: ${s.count}`).join('\n')}
 
-🌟 Top POTM:
-${stats.topPotm.map(s => `• ${s.name}: ${Math.round(s.count * 10) / 10}`).join('\n')}
+🌟 Top Coach POTM:
+${stats.topCoachPotm.map(s => `• ${s.name}: ${Math.round(s.count * 10) / 10}`).join('\n')}
+
+🌟 Top Parent POTM:
+${stats.topParentPotm.map(s => `• ${s.name}: ${Math.round(s.count * 10) / 10}`).join('\n')}
 
 Shared via Pitch Dark App
     `.trim();
@@ -100,7 +103,7 @@ Shared via Pitch Dark App
     <AnimatePresence>
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[100] flex items-start justify-center p-4 overflow-y-auto"
+          className="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-[100] flex items-start justify-center p-4 overflow-y-auto"
           onClick={onClose}
         >
           <motion.div
@@ -117,11 +120,11 @@ Shared via Pitch Dark App
                   <Share2 size={20} className="text-green-500" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-white">Share Season Summary</h2>
+                  <h2 className="text-lg font-bold text-slate-50">Share Season Summary</h2>
                   <p className="text-xs text-slate-400">Generate a report for your team</p>
                 </div>
               </div>
-              <button onClick={onClose} className="p-2 text-slate-400 hover:text-white transition-colors bg-slate-800 rounded-full">
+              <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-50 transition-colors bg-slate-800 rounded-full">
                 <X size={24} />
               </button>
             </div>
@@ -134,12 +137,13 @@ Shared via Pitch Dark App
                   backgroundColor: HEX_COLORS.pitchBlack, 
                   padding: '40px',
                   borderRadius: '32px',
-                  width: '600px',
-                  minWidth: '600px',
+                  width: '100%',
+                  maxWidth: '600px',
                   margin: '0 auto',
                   fontFamily: 'sans-serif',
                   position: 'relative',
-                  overflow: 'hidden'
+                  overflow: 'hidden',
+                  boxSizing: 'border-box'
                 }}
               >
                 {/* Background Pattern */}
@@ -318,7 +322,7 @@ Shared via Pitch Dark App
             <div className="p-6 bg-slate-900 border-t border-slate-800 flex flex-col sm:flex-row gap-3">
               <button
                 onClick={copyTextSummary}
-                className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl font-bold transition-all"
+                className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-50 rounded-2xl font-bold transition-all"
               >
                 {copied ? <Check size={18} className="text-green-500" /> : <Copy size={18} />}
                 {copied ? 'Copied!' : 'Copy Text Summary'}

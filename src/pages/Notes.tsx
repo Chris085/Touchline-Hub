@@ -165,7 +165,7 @@ export function Notes() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center space-y-4">
           <FileText className="mx-auto text-slate-700" size={48} />
-          <h2 className="text-xl font-bold text-white">Access Denied</h2>
+          <h2 className="text-xl font-bold text-slate-50">Access Denied</h2>
           <p className="text-slate-400">Only coaches can view and manage team notes.</p>
         </div>
       </div>
@@ -176,7 +176,7 @@ export function Notes() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-white">Team Notes</h1>
+          <h1 className="text-2xl font-bold text-slate-50">Team Notes</h1>
           <p className="text-slate-400 text-sm">Track performance, tactics, and observations</p>
         </div>
         <button
@@ -213,14 +213,14 @@ export function Notes() {
               placeholder="Search notes..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2 pl-10 pr-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2 pl-10 pr-4 text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50"
             />
           </div>
           
           <select
             value={filterPlayer || ''}
             onChange={(e) => setFilterPlayer(e.target.value || null)}
-            className="bg-slate-800 border border-slate-700 rounded-xl py-2 px-4 text-white focus:outline-none focus:ring-2 focus:ring-green-500/50"
+            className="bg-slate-800 border border-slate-700 rounded-xl py-2 px-4 text-slate-50 focus:outline-none focus:ring-2 focus:ring-green-500/50"
           >
             <option value="">All Players</option>
             {players.map(p => (
@@ -306,7 +306,7 @@ export function Notes() {
       {/* Add Note Modal */}
       <AnimatePresence>
         {showAddModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -314,8 +314,8 @@ export function Notes() {
               className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-6"
             >
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-white">New General Note</h2>
-                <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white">
+                <h2 className="text-xl font-bold text-slate-50">New General Note</h2>
+                <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-50">
                   <X size={24} />
                 </button>
               </div>
@@ -327,7 +327,7 @@ export function Notes() {
                     value={newNote.content}
                     onChange={(e) => setNewNote(prev => ({ ...prev, content: e.target.value }))}
                     placeholder="Write your observations here..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 min-h-[150px]"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 min-h-[150px]"
                   />
                 </div>
 
@@ -354,7 +354,7 @@ export function Notes() {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 px-6 py-3 rounded-2xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition-all"
+                  className="flex-1 px-6 py-3 rounded-2xl bg-slate-800 text-slate-50 font-bold hover:bg-slate-700 transition-all"
                 >
                   Cancel
                 </button>

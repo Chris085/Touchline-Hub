@@ -26,6 +26,7 @@ export interface UserProfile {
   trialEndDate?: string;
   stripeCustomerId?: string;
   fcmToken?: string;
+  dashboardShortcuts?: string[];
 }
 
 interface AuthContextType {

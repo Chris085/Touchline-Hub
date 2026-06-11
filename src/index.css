@@ -1,24 +1,84 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --theme-pitch-green: #16a34a;
+  --theme-pitch-dark: #052e16;
+  --theme-turf-surface: #064e3b;
+  --theme-chalk-white: #f8fafc;
+  --theme-pitch-accent: #22c55e;
+  
+  --bg-pattern-dark: rgba(5, 46, 22, 0.8);
+  --bg-pattern-light: rgba(22, 163, 74, 0.05);
+  --pitch-grid-line: rgba(255, 255, 255, 0.05);
+
+  --slate-50-val: #f8fafc;
+  --slate-100-val: #f1f5f9;
+  --slate-200-val: #e2e8f0;
+  --slate-300-val: #cbd5e1;
+  --slate-400-val: #94a3b8;
+  --slate-500-val: #64748b;
+  --slate-600-val: #475569;
+  --slate-700-val: #334155;
+  --slate-800-val: #1e293b;
+  --slate-900-val: #0f172a;
+  --slate-950-val: #020617;
+}
+
+:root.light {
+  --theme-pitch-green: #15803d;
+  --theme-pitch-dark: #f8fafc;
+  --theme-turf-surface: #e2e8f0;
+  --theme-chalk-white: #052e16;
+  --theme-pitch-accent: #16a34a;
+  
+  --bg-pattern-dark: rgba(248, 250, 252, 0.8);
+  --bg-pattern-light: rgba(22, 163, 74, 0.02);
+  --pitch-grid-line: rgba(5, 46, 22, 0.05);
+
+  --slate-50-val: #020617;
+  --slate-100-val: #0f172a;
+  --slate-200-val: #1e293b;
+  --slate-300-val: #334155;
+  --slate-400-val: #475569;
+  --slate-500-val: #64748b;
+  --slate-600-val: #94a3b8;
+  --slate-700-val: #cbd5e1;
+  --slate-800-val: #e2e8f0;
+  --slate-900-val: #f1f5f9;
+  --slate-950-val: #ffffff;
+}
 
 @theme {
   --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Space Grotesk", sans-serif;
   
-  --color-pitch-green: #16a34a;
-  --color-pitch-dark: #052e16;
-  --color-turf-surface: #064e3b;
-  --color-chalk-white: #f8fafc;
-  --color-pitch-accent: #22c55e;
+  --color-pitch-green: var(--theme-pitch-green);
+  --color-pitch-dark: var(--theme-pitch-dark);
+  --color-turf-surface: var(--theme-turf-surface);
+  --color-chalk-white: var(--theme-chalk-white);
+  --color-pitch-accent: var(--theme-pitch-accent);
+
+  --color-slate-50: var(--slate-50-val);
+  --color-slate-100: var(--slate-100-val);
+  --color-slate-200: var(--slate-200-val);
+  --color-slate-300: var(--slate-300-val);
+  --color-slate-400: var(--slate-400-val);
+  --color-slate-500: var(--slate-500-val);
+  --color-slate-600: var(--slate-600-val);
+  --color-slate-700: var(--slate-700-val);
+  --color-slate-800: var(--slate-800-val);
+  --color-slate-900: var(--slate-900-val);
+  --color-slate-950: var(--slate-950-val);
 }
 
 @layer base {
   body {
-    @apply bg-pitch-dark text-chalk-white font-sans antialiased;
+    @apply bg-pitch-dark text-chalk-white font-sans antialiased transition-colors duration-300;
     background-image: 
-      radial-gradient(circle at 50% 50%, rgba(22, 163, 74, 0.05) 0%, transparent 50%),
-      linear-gradient(rgba(5, 46, 22, 0.8) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(5, 46, 22, 0.8) 1px, transparent 1px);
+      radial-gradient(circle at 50% 50%, var(--bg-pattern-light) 0%, transparent 50%),
+      linear-gradient(var(--bg-pattern-dark) 1px, transparent 1px),
+      linear-gradient(90deg, var(--bg-pattern-dark) 1px, transparent 1px);
     background-size: 100% 100%, 40px 40px, 40px 40px;
   }
 }
@@ -26,8 +86,8 @@
 @layer utilities {
   .pitch-grid {
     background-image: 
-      linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+      linear-gradient(to right, var(--pitch-grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--pitch-grid-line) 1px, transparent 1px);
     background-size: 20px 20px;
   }
   

@@ -6,8 +6,6 @@ import {
   Activity, 
   Award, 
   Shield, 
-  Newspaper, 
-  MessageSquare,
   FileText,
   BarChart3,
   Clock,
@@ -22,147 +20,28 @@ import {
   Search
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { FEATURE_GROUPS } from '../lib/features';
 import { useAuth } from '../contexts/AuthContext';
-
-interface Feature {
-  id: string;
-  name: string;
-  description: string;
-  icon: any;
-  path: string;
-  color: string;
-  coachOnly?: boolean;
-}
-
-interface FeatureGroup {
-  title: string;
-  description: string;
-  features: Feature[];
-}
+import { Pin } from 'lucide-react';
 
 export function Features() {
   const navigate = useNavigate();
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, updateProfile } = useAuth();
   const isCoach = profile?.role === 'coach' || isAdmin;
 
-  const groups: FeatureGroup[] = [
-    {
-      title: "Match Day",
-      description: "Everything you need for game day success",
-      features: [
-        {
-          id: 'live',
-          name: 'Live Match Controller',
-          description: 'Track goals, subs, and match time in real-time.',
-          icon: Activity,
-          path: '/live',
-          color: 'bg-green-500'
-        },
-        {
-          id: 'schedule',
-          name: 'Team Schedule',
-          description: 'View upcoming matches and training sessions.',
-          icon: Calendar,
-          path: '/',
-          color: 'bg-blue-500'
-        },
-        {
-          id: 'add-schedule',
-          name: 'Add Schedule Entry',
-          description: 'Create new matches or training sessions.',
-          icon: Plus,
-          path: '/?add=true',
-          color: 'bg-green-500',
-          coachOnly: true
-        },
-        {
-          id: 'motm',
-          name: 'MOTM Voting',
-          description: 'Parents vote for their Man of the Match.',
-          icon: Award,
-          path: '/motm',
-          color: 'bg-yellow-500'
-        }
-      ]
-    },
-    {
-      title: "Team Management",
-      description: "Keep your squad organized and ready",
-      features: [
-        {
-          id: 'squad',
-          name: 'Squad Management',
-          description: 'Manage player profiles, numbers, and positions.',
-          icon: Users,
-          path: '/squad',
-          color: 'bg-indigo-500'
-        },
-        {
-          id: 'attendance',
-          name: 'Attendance Tracking',
-          description: 'Track who shows up for training and matches.',
-          icon: UserCheck,
-          path: '/',
-          color: 'bg-emerald-500',
-          coachOnly: true
-        },
-        {
-          id: 'admin',
-          name: 'Team Settings',
-          description: 'Configure team details and invite codes.',
-          icon: Shield,
-          path: '/admin',
-          color: 'bg-slate-500',
-          coachOnly: true
-        }
-      ]
-    },
-    {
-      title: "Communication",
-      description: "Stay connected with your team",
-      features: [
-        {
-          id: 'chat',
-          name: 'Team Chat',
-          description: 'Real-time messaging for coaches and parents.',
-          icon: MessageSquare,
-          path: '/chat',
-          color: 'bg-purple-500'
-        },
-        {
-          id: 'news',
-          name: 'News Feed',
-          description: 'Share updates, photos, and announcements.',
-          icon: Newspaper,
-          path: '/news',
-          color: 'bg-orange-500'
-        }
-      ]
-    },
-    {
-      title: "Insights & Performance",
-      description: "Analyze and improve your team's game",
-      features: [
-        {
-          id: 'notes',
-          name: 'Coach Notes',
-          description: 'Record observations and session plans.',
-          icon: FileText,
-          path: '/notes',
-          color: 'bg-pink-500',
-          coachOnly: true
-        },
-        {
-          id: 'stats',
-          name: 'Team Stats',
-          description: 'View performance data and player metrics.',
-          icon: BarChart3,
-          path: '/',
-          color: 'bg-cyan-500'
-        }
-      ]
+  const handleToggleShortcut = async (e: React.MouseEvent, featureId: string) => {
+    e.stopPropagation();
+    const currentShortcuts = profile?.dashboardShortcuts || [];
+    const newShortcuts = currentShortcuts.includes(featureId)
+      ? currentShortcuts.filter(id => id !== featureId)
+      : [...currentShortcuts, featureId];
+    
+    try {
+      await updateProfile({ dashboardShortcuts: newShortcuts });
+    } catch (error) {
+      console.error('Error updating shortcuts:', error);
     }
-  ];
+  };
 
   const container = {
     hidden: { opacity: 0 },
@@ -190,7 +69,7 @@ export function Features() {
           <LayoutGrid size={14} />
           Feature Directory
         </motion.div>
-        <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight">
+        <h1 className="text-4xl sm:text-5xl font-black text-slate-50 tracking-tight">
           The Touchline <span className="text-green-500">Hub</span>
         </h1>
         <p className="text-slate-400 text-lg max-w-2xl mx-auto">
@@ -204,12 +83,12 @@ export function Features() {
         animate="show"
         className="space-y-16"
       >
-        {groups.map((group, groupIdx) => (
+        {FEATURE_GROUPS.map((group, groupIdx) => (
           <section key={groupIdx} className="space-y-6">
             <div className="flex items-center gap-4">
               <div className="h-px flex-1 bg-slate-800"></div>
               <div className="text-center">
-                <h2 className="text-2xl font-black text-white">{group.title}</h2>
+                <h2 className="text-2xl font-black text-slate-50">{group.title}</h2>
                 <p className="text-sm text-slate-500">{group.description}</p>
               </div>
               <div className="h-px flex-1 bg-slate-800"></div>
@@ -219,6 +98,8 @@ export function Features() {
               {group.features.map((feature) => {
                 const Icon = feature.icon;
                 const isDisabled = feature.coachOnly && !isCoach;
+
+                const isPinned = profile?.dashboardShortcuts?.includes(feature.id);
 
                 return (
                   <motion.div
@@ -237,17 +118,33 @@ export function Features() {
                     <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full blur-3xl opacity-0 group-hover:opacity-20 transition-opacity ${feature.color}`} />
                     
                     <div className="relative z-10 space-y-4">
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border shadow-inner ${
-                        isDisabled 
-                          ? 'bg-slate-800 border-slate-700 text-slate-600' 
-                          : `${feature.color}/10 border-${feature.color.split('-')[1]}-500/20 text-${feature.color.split('-')[1]}-500`
-                      }`}>
-                        <Icon size={24} />
+                      <div className="flex items-start justify-between">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border shadow-inner ${
+                          isDisabled 
+                            ? 'bg-slate-800 border-slate-700 text-slate-600' 
+                            : `${feature.color}/10 border-${feature.color.split('-')[1]}-500/20 text-${feature.color.split('-')[1]}-500`
+                        }`}>
+                          <Icon size={24} />
+                        </div>
+
+                        {!isDisabled && (
+                          <button
+                            onClick={(e) => handleToggleShortcut(e, feature.id)}
+                            className={`p-2 rounded-full transition-colors ${
+                              isPinned 
+                                ? 'bg-pitch-green/20 text-pitch-green hover:bg-pitch-green/30' 
+                                : 'bg-chalk-white/5 text-chalk-white/40 hover:bg-chalk-white/10 hover:text-chalk-white'
+                            }`}
+                            title={isPinned ? "Remove from Dashboard" : "Pin to Dashboard"}
+                          >
+                            <Pin size={16} className={isPinned ? 'fill-current' : ''} />
+                          </button>
+                        )}
                       </div>
                       
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-bold text-white">{feature.name}</h3>
+                          <h3 className="text-lg font-bold text-slate-50">{feature.name}</h3>
                           {feature.coachOnly && (
                             <Shield size={12} className="text-slate-500" />
                           )}
@@ -281,7 +178,7 @@ export function Features() {
         <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 via-transparent to-blue-500/5" />
         
         <div className="relative z-10 space-y-4">
-          <h2 className="text-3xl font-black text-white">Ready to elevate your team?</h2>
+          <h2 className="text-3xl font-black text-slate-50">Ready to elevate your team?</h2>
           <p className="text-slate-400 max-w-xl mx-auto">
             The Touchline Hub is constantly evolving with new features built specifically for grassroots football.
           </p>

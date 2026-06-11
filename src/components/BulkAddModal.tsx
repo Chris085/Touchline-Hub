@@ -20,7 +20,7 @@ interface BulkMatch {
   coachPotmName: string;
   parentPotmId: string;
   parentPotmName: string;
-  scorers: string[]; // Array of player IDs for each goal scored by "Us"
+  scorers: { playerId: string; assistId: string }[];
 }
 
 interface BulkAddModalProps {
@@ -81,10 +81,12 @@ export const BulkAddModal: React.FC<BulkAddModalProps> = ({ isOpen, onClose, tea
     setIsSaving(true);
     try {
       const promises = matches.map(match => {
-        const events = match.scorers.map(playerId => ({
+        const events = match.scorers.map(s => ({
           type: 'goal',
-          playerId,
-          playerName: players.find(p => p.id === playerId)?.name || 'Unknown',
+          playerId: s.playerId,
+          playerName: players.find(p => p.id === s.playerId)?.name || 'Unknown',
+          assistPlayerId: s.assistId || null,
+          assistPlayerName: s.assistId ? (players.find(p => p.id === s.assistId)?.name || 'Unknown') : null,
           timestamp: new Date(match.date).getTime(),
           minute: 0,
           isOwnGoal: false
@@ -124,12 +126,12 @@ export const BulkAddModal: React.FC<BulkAddModalProps> = ({ isOpen, onClose, tea
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 bg-pitch-dark/95 backdrop-blur-xl z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-pitch-dark/95 backdrop-blur-xl z-[60] overflow-y-auto px-4 py-8 flex justify-center items-start sm:items-center">
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="bg-turf-surface/80 border border-chalk-white/10 rounded-[2.5rem] w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col relative"
+            className="bg-turf-surface/80 border border-chalk-white/10 rounded-[2.5rem] w-full max-w-5xl shadow-2xl flex flex-col relative"
           >
             <div className="absolute inset-0 pitch-grid opacity-5 pointer-events-none" />
             
@@ -206,7 +208,7 @@ export const BulkAddModal: React.FC<BulkAddModalProps> = ({ isOpen, onClose, tea
                           const newScore = parseInt(e.target.value) || 0;
                           const newScorers = [...match.scorers];
                           if (newScore > match.scorers.length) {
-                            for (let i = match.scorers.length; i < newScore; i++) newScorers.push('');
+                            for (let i = match.scorers.length; i < newScore; i++) newScorers.push({ playerId: '', assistId: '' });
                           } else {
                             newScorers.splice(newScore);
                           }
@@ -227,26 +229,45 @@ export const BulkAddModal: React.FC<BulkAddModalProps> = ({ isOpen, onClose, tea
 
                   {/* Scorers */}
                   <div className="space-y-2">
-                    <label className="md:hidden block text-[9px] font-black text-chalk-white/20 mb-1 uppercase tracking-widest font-display italic">Scorers</label>
+                    <label className="md:hidden block text-[9px] font-black text-chalk-white/20 mb-1 uppercase tracking-widest font-display italic">Scorers & Assists</label>
                     {match.scorers.length > 0 ? (
-                      <div className="space-y-2">
-                        {match.scorers.map((scorerId, sIndex) => (
-                          <div key={sIndex} className="relative">
-                            <Goal size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-pitch-green/40" />
-                            <select
-                              value={scorerId}
-                              onChange={(e) => {
-                                const newScorers = [...match.scorers];
-                                newScorers[sIndex] = e.target.value;
-                                updateMatch(match.id, { scorers: newScorers });
-                              }}
-                              className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-chalk-white focus:outline-none focus:border-pitch-green transition-colors appearance-none"
-                            >
-                              <option value="">Select Scorer</option>
-                              {players.map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                              ))}
-                            </select>
+                      <div className="space-y-3">
+                        {match.scorers.map((scorer, sIndex) => (
+                          <div key={sIndex} className="space-y-1">
+                            <div className="relative">
+                              <Goal size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-pitch-green/40" />
+                              <select
+                                value={scorer.playerId}
+                                onChange={(e) => {
+                                  const newScorers = [...match.scorers];
+                                  newScorers[sIndex] = { ...newScorers[sIndex], playerId: e.target.value };
+                                  updateMatch(match.id, { scorers: newScorers });
+                                }}
+                                className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-chalk-white focus:outline-none focus:border-pitch-green transition-colors appearance-none"
+                              >
+                                <option value="">Select Scorer</option>
+                                {players.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="relative">
+                              <Plus size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500/40" />
+                              <select
+                                value={scorer.assistId}
+                                onChange={(e) => {
+                                  const newScorers = [...match.scorers];
+                                  newScorers[sIndex] = { ...newScorers[sIndex], assistId: e.target.value };
+                                  updateMatch(match.id, { scorers: newScorers });
+                                }}
+                                className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl pl-8 pr-4 py-2 text-[10px] font-bold text-chalk-white focus:outline-none focus:border-blue-500 transition-colors appearance-none"
+                              >
+                                <option value="">Select Assist (Optional)</option>
+                                {players.map(p => (
+                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         ))}
                       </div>

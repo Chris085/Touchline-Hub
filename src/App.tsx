@@ -6,6 +6,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
@@ -18,8 +19,6 @@ import { MatchController } from './pages/MatchController';
 import { MotmVoting } from './pages/MotmVoting';
 import { ScheduleDetails } from './pages/ScheduleDetails';
 import { PlayerProfile } from './pages/PlayerProfile';
-import { NewsFeed } from './pages/NewsFeed';
-import { TeamChat } from './pages/TeamChat';
 import { Notes } from './pages/Notes';
 import { Features } from './pages/Features';
 import { Stats } from './pages/Stats';
@@ -74,8 +73,6 @@ function AppRoutes() {
       
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
-        <Route path="news" element={<NewsFeed />} />
-        <Route path="chat" element={<TeamChat />} />
         <Route path="schedule/:id" element={<ScheduleDetails />} />
         <Route path="player/:id" element={<PlayerProfile />} />
         <Route path="squad" element={<Squad />} />
@@ -96,11 +93,13 @@ function AppRoutes() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

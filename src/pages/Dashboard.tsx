@@ -5,9 +5,10 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { BulkAddModal } from '../components/BulkAddModal';
 import { format } from 'date-fns';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Calendar as CalendarIcon, MapPin, Clock, Plus, Trash2, Check, X, HelpCircle, ChevronRight, ChevronDown, ChevronUp, Pencil, Users, Trophy, Activity, LayoutGrid, Zap, BarChart3, MoreVertical } from 'lucide-react';
+import { Calendar as CalendarIcon, MapPin, Clock, Plus, Trash2, Check, X, HelpCircle, ChevronRight, ChevronDown, ChevronUp, Pencil, Users, Trophy, Activity, LayoutGrid, Zap, BarChart3, MoreVertical, UserCheck, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { triggerNotification } from '../lib/notifications';
+import { ALL_FEATURES } from '../lib/features';
 
 interface Match {
   id: string;
@@ -16,6 +17,7 @@ interface Match {
   matchCategory?: 'league' | 'cup' | 'friendly';
   opponent?: string;
   date: string;
+  meetTime?: string;
   location?: string;
   postcode?: string;
   status: 'scheduled' | 'in-progress' | 'completed' | 'postponed';
@@ -91,7 +93,8 @@ export function Dashboard() {
     type: 'match',
     matchCategory: 'league',
     status: 'scheduled',
-    date: new Date().toISOString().slice(0, 16)
+    date: new Date().toISOString().slice(0, 16),
+    meetTime: ''
   });
   const [isRecurring, setIsRecurring] = useState(false);
   const [repeatDays, setRepeatDays] = useState(7);
@@ -112,6 +115,17 @@ export function Dashboard() {
   const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
+    if (showAddModal || showEditModal || showBulkAddModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showAddModal, showEditModal, showBulkAddModal]);
+
+  useEffect(() => {
     if (!profile?.teamId) return;
 
     // Fetch matches
@@ -124,7 +138,7 @@ export function Dashboard() {
       matchesData.sort((a, b) => {
         const dateA = a.date ? new Date(a.date).getTime() : 0;
         const dateB = b.date ? new Date(b.date).getTime() : 0;
-        return dateA - dateB;
+        return dateB - dateA;
       });
       setMatches(matchesData);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'matches'));
@@ -275,7 +289,7 @@ export function Dashboard() {
       groups[key].push(match);
       return groups;
     }
-    const monthYear = format(new Date(match.date), 'MMMM yyyy');
+    const monthYear = format(new Date(match.date), 'yyyy-MM');
     if (!groups[monthYear]) {
       groups[monthYear] = [];
     }
@@ -295,7 +309,9 @@ export function Dashboard() {
     setExpandedMonths(prev => ({ ...prev, [month]: !prev[month] }));
   };
 
-  const nextMatch = matches.find(m => m.type === 'match' && m.status !== 'postponed' && m.date && new Date(m.date) > new Date());
+  const nextMatch = [...matches]
+    .filter(m => m.type === 'match' && m.status !== 'postponed' && m.status !== 'completed' && m.date && new Date(m.date) > new Date())
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
 
   return (
     <div className="space-y-8 relative pb-20">
@@ -343,43 +359,83 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Team Overview Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
-        <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-2xl p-4 flex flex-col justify-between">
-          <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Squad Size</span>
-          <div className="flex items-end justify-between mt-2">
-            <span className="text-3xl font-black text-chalk-white font-display italic leading-none">{players.length}</span>
-            <Users size={20} className="text-pitch-green/40" />
+      {/* Top Section: Pinned Shortcuts or Default Stats */}
+      {profile?.dashboardShortcuts && profile.dashboardShortcuts.length > 0 ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 relative z-10 w-full">
+          {profile.dashboardShortcuts.map((shortcutId, index) => {
+             const feature = ALL_FEATURES.find(f => f.id === shortcutId);
+             if (!feature) return null;
+             
+             // Extract text color from bg color class ('bg-green-500' -> 'text-green-500')
+             const iconColorClass = feature.color ? feature.color.replace('bg-', 'text-') : 'text-pitch-green';
+             const Icon = feature.icon;
+             
+             return (
+               <motion.button
+                 key={`shortcut-${index}`}
+                 initial={{ opacity: 0, y: 10 }}
+                 animate={{ opacity: 1, y: 0 }}
+                 transition={{ delay: index * 0.05 }}
+                 onClick={() => navigate(feature.path)}
+                 className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 hover:border-chalk-white/20 rounded-2xl p-4 flex flex-col items-start text-left transition-all group overflow-hidden relative"
+               >
+                 <div className={`absolute -right-4 -top-4 w-16 h-16 rounded-full blur-2xl opacity-0 group-hover:opacity-10 transition-opacity ${feature.color}`} />
+                 
+                 <div className="flex items-center justify-between w-full mb-3">
+                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-inner ${feature.color}/10 border-${feature.color.split('-')[1]}-500/20 ${iconColorClass}`}>
+                     <Icon size={20} />
+                   </div>
+                   <ArrowRight size={14} className="opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-chalk-white/40" />
+                 </div>
+                 
+                 <span className="text-slate-50 font-bold text-sm tracking-tight mb-1">{feature.name}</span>
+                 <span className="text-chalk-white/40 text-[10px] leading-tight line-clamp-2">{feature.description}</span>
+               </motion.button>
+             );
+          })}
+        </div>
+      ) : (
+        /* Team Overview Stats (Default if no shortcuts pinned) */
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 relative z-10">
+          <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-2xl p-4 flex flex-col justify-between group overflow-hidden relative cursor-pointer" onClick={() => navigate('/features')}>
+            <div className="absolute right-0 top-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="text-[8px] bg-pitch-green/20 text-pitch-green px-2 py-0.5 rounded-full uppercase tracking-widest font-bold border border-pitch-green/20">Edit Tiles</span>
+            </div>
+            <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Squad Size</span>
+            <div className="flex items-end justify-between mt-2">
+              <span className="text-3xl font-black text-chalk-white font-display italic leading-none">{players.length}</span>
+              <Users size={20} className="text-pitch-green/40" />
+            </div>
+          </div>
+          <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-2xl p-4 flex flex-col justify-between group overflow-hidden relative cursor-pointer" onClick={() => navigate('/features')}>
+            <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Upcoming</span>
+            <div className="flex items-end justify-between mt-2">
+              <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
+                {matches.filter(m => m.status !== 'postponed' && m.status !== 'completed' && m.date && new Date(m.date) > new Date()).length}
+              </span>
+              <CalendarIcon size={20} className="text-pitch-green/40" />
+            </div>
+          </div>
+          <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-2xl p-4 flex flex-col justify-between group overflow-hidden relative cursor-pointer" onClick={() => navigate('/features')}>
+            <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Next Training</span>
+            <div className="flex items-end justify-between mt-2">
+              <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
+                {matches.filter(m => m.type === 'training' && m.status !== 'postponed' && m.status !== 'completed' && m.date && new Date(m.date) > new Date()).length > 0 ? '1' : '0'}
+              </span>
+              <Activity size={20} className="text-blue-500/40" />
+            </div>
+          </div>
+          <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-2xl p-4 flex flex-col justify-between group overflow-hidden relative cursor-pointer" onClick={() => navigate('/features')}>
+            <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Completed</span>
+            <div className="flex items-end justify-between mt-2">
+              <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
+                {matches.filter(m => m.status === 'completed').length}
+              </span>
+              <Trophy size={20} className="text-yellow-500/40" />
+            </div>
           </div>
         </div>
-        <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-2xl p-4 flex flex-col justify-between">
-          <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Upcoming</span>
-          <div className="flex items-end justify-between mt-2">
-            <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
-              {matches.filter(m => m.status !== 'postponed' && m.date && new Date(m.date) > new Date()).length}
-            </span>
-            <CalendarIcon size={20} className="text-pitch-green/40" />
-          </div>
-        </div>
-        <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-2xl p-4 flex flex-col justify-between">
-          <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Next Training</span>
-          <div className="flex items-end justify-between mt-2">
-            <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
-              {matches.filter(m => m.type === 'training' && m.status !== 'postponed' && m.date && new Date(m.date) > new Date()).length > 0 ? '1' : '0'}
-            </span>
-            <Activity size={20} className="text-blue-500/40" />
-          </div>
-        </div>
-        <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-2xl p-4 flex flex-col justify-between">
-          <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Completed</span>
-          <div className="flex items-end justify-between mt-2">
-            <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
-              {matches.filter(m => m.status === 'completed').length}
-            </span>
-            <Trophy size={20} className="text-yellow-500/40" />
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Next Match Highlight */}
       {nextMatch && (
@@ -411,6 +467,12 @@ export function Dashboard() {
                     <Clock size={16} className="text-pitch-green" />
                     <span>{nextMatch.date ? format(new Date(nextMatch.date), 'h:mm a') : 'TBA'}</span>
                   </div>
+                  {nextMatch.meetTime && (
+                    <div className="flex items-center gap-2">
+                      <UserCheck size={16} className="text-pitch-green" />
+                      <span>Meet: {nextMatch.meetTime}</span>
+                    </div>
+                  )}
                   {nextMatch.location && (
                     <div className="flex items-center gap-2">
                       <MapPin size={16} className="text-pitch-green" />
@@ -436,7 +498,7 @@ export function Dashboard() {
         </motion.div>
       )}
 
-      <div className="flex items-center justify-between gap-4 mb-8 relative z-40">
+      <div className="flex items-center justify-between gap-4 mb-8 relative z-20">
         <div className="flex gap-2 overflow-x-auto hide-scrollbar flex-1 min-w-0 pb-2 sm:pb-0">
           <button 
             onClick={() => setFilter('all')} 
@@ -452,7 +514,7 @@ export function Dashboard() {
           </button>
           <button 
             onClick={() => setFilter('training')} 
-            className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all font-display italic ${filter === 'training' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'bg-chalk-white/5 text-chalk-white/40 hover:bg-chalk-white/10'}`}
+            className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all font-display italic ${filter === 'training' ? 'bg-blue-500 text-slate-50 shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'bg-chalk-white/5 text-chalk-white/40 hover:bg-chalk-white/10'}`}
           >
             Training
           </button>
@@ -469,7 +531,7 @@ export function Dashboard() {
                   }
                   setShowBulkAddModal(true);
                 }}
-                className={`p-2.5 ${isSubscribed ? 'bg-blue-500 shadow-blue-500/30' : 'bg-slate-700 shadow-none'} text-white rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-4`}
+                className={`p-2.5 ${isSubscribed ? 'bg-blue-500 shadow-blue-500/30' : 'bg-slate-700 shadow-none'} text-slate-50 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-4`}
                 title={isSubscribed ? "Bulk Add Results" : "Upgrade to Add"}
               >
                 <Trophy size={18} strokeWidth={3} />
@@ -540,7 +602,7 @@ export function Dashboard() {
             .sort(([a], [b]) => {
               if (a === 'Postponed / TBA') return 1;
               if (b === 'Postponed / TBA') return -1;
-              return new Date(b).getTime() - new Date(a).getTime();
+              return b.localeCompare(a); // Lexicographical sort works for yyyy-MM
             })
             .map(([month, monthMatches]: [string, Match[]]) => (
             <div key={month} className="space-y-4">
@@ -549,7 +611,9 @@ export function Dashboard() {
                 className="w-full flex items-center justify-between group px-2"
               >
                 <div className="flex items-center gap-4">
-                  <h2 className="text-xl font-black text-chalk-white uppercase tracking-tighter italic font-display">{month}</h2>
+                  <h2 className="text-xl font-black text-chalk-white uppercase tracking-tighter italic font-display">
+                    {month === 'Postponed / TBA' ? month : format(new Date(`${month}-01T00:00:00Z`), 'MMM yy').toUpperCase()}
+                  </h2>
                   <div className="h-px w-12 bg-pitch-green/30" />
                   <span className="text-[9px] font-black text-pitch-green uppercase tracking-widest bg-pitch-green/10 px-2 py-0.5 rounded border border-pitch-green/20 font-display italic">
                     {monthMatches.length} EVENTS
@@ -641,56 +705,58 @@ export function Dashboard() {
                       </div>
 
                       {/* Availability Section */}
-                      <div className="mt-auto">
-                        {profile?.role === 'parent' ? (
-                          <div className="space-y-4 bg-pitch-dark/30 rounded-2xl p-4 border border-chalk-white/5">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Squad Selection</h4>
-                              <Activity size={12} className="text-pitch-green/30" />
-                            </div>
-                            {players.map(player => {
-                              const status = availabilities[`${match.id}_${player.id}`]?.status;
-                              return (
-                                <div key={player.id} className="flex items-center justify-between gap-4">
-                                  <span className="text-xs font-black text-chalk-white/80 uppercase tracking-tight break-words italic font-display">{player.name}</span>
-                                  <div className="flex gap-1 shrink-0">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'going'); }}
-                                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
-                                    >
-                                      <Check size={16} strokeWidth={4} />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'maybe'); }}
-                                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'maybe' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
-                                    >
-                                      <HelpCircle size={16} strokeWidth={4} />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'not-going'); }}
-                                      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'not-going' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
-                                    >
-                                      <X size={16} strokeWidth={4} />
-                                    </button>
+                      {match.type !== 'training' && (
+                        <div className="mt-auto">
+                          {profile?.role === 'parent' ? (
+                            <div className="space-y-4 bg-pitch-dark/30 rounded-2xl p-4 border border-chalk-white/5">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Squad Selection</h4>
+                                <Activity size={12} className="text-pitch-green/30" />
+                              </div>
+                              {players.map(player => {
+                                const status = availabilities[`${match.id}_${player.id}`]?.status;
+                                return (
+                                  <div key={player.id} className="flex items-center justify-between gap-4">
+                                    <span className="text-xs font-black text-chalk-white/80 uppercase tracking-tight break-words italic font-display">{player.name}</span>
+                                    <div className="flex gap-1 shrink-0">
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'going'); }}
+                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                                      >
+                                        <Check size={16} strokeWidth={4} />
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'maybe'); }}
+                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'maybe' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                                      >
+                                        <HelpCircle size={16} strokeWidth={4} />
+                                      </button>
+                                      <button
+                                        onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'not-going'); }}
+                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'not-going' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                                      >
+                                        <X size={16} strokeWidth={4} />
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="flex justify-between items-center bg-pitch-dark/30 rounded-2xl p-4 border border-chalk-white/5">
-                            <div className="flex flex-col">
-                              <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Squad Confirmed</span>
-                              <span className="text-2xl font-black text-pitch-green italic font-display leading-none mt-1">
-                                {Object.values(availabilities).filter((a: any) => a.matchId === match.id && a.status === 'going').length}
-                              </span>
+                                );
+                              })}
                             </div>
-                            <div className="w-10 h-10 bg-pitch-green/10 rounded-xl flex items-center justify-center border border-pitch-green/20">
-                              <Users size={20} className="text-pitch-green" />
+                          ) : (
+                            <div className="flex justify-between items-center bg-pitch-dark/30 rounded-2xl p-4 border border-chalk-white/5">
+                              <div className="flex flex-col">
+                                <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Squad Confirmed</span>
+                                <span className="text-2xl font-black text-pitch-green italic font-display leading-none mt-1">
+                                  {Object.values(availabilities).filter((a: any) => a.matchId === match.id && a.status === 'going').length}
+                                </span>
+                              </div>
+                              <div className="w-10 h-10 bg-pitch-green/10 rounded-xl flex items-center justify-center border border-pitch-green/20">
+                                <Users size={20} className="text-pitch-green" />
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      )}
                     </motion.div>
                   ))}
                 </div>
@@ -702,11 +768,11 @@ export function Dashboard() {
 
       {/* Add Match Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-[100] overflow-y-auto px-4 py-8 flex justify-center items-start sm:items-center">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-turf-surface/60 backdrop-blur-xl border border-chalk-white/10 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+            className="bg-turf-surface/60 backdrop-blur-xl border border-chalk-white/10 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl relative"
           >
             <div className="absolute inset-0 pitch-grid opacity-10 pointer-events-none" />
             <div className="relative z-10">
@@ -725,7 +791,7 @@ export function Dashboard() {
                     <button
                       type="button"
                       onClick={() => setNewMatch({ ...newMatch, type: 'training' })}
-                      className={`flex-1 py-3.5 rounded-xl font-black uppercase tracking-tight transition-all font-display italic ${newMatch.type === 'training' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/40 border border-chalk-white/5'}`}
+                      className={`flex-1 py-3.5 rounded-xl font-black uppercase tracking-tight transition-all font-display italic ${newMatch.type === 'training' ? 'bg-blue-500 text-slate-50 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/40 border border-chalk-white/5'}`}
                     >
                       Training
                     </button>
@@ -768,6 +834,16 @@ export function Dashboard() {
                     onChange={(e) => setNewMatch({ ...newMatch, date: e.target.value })}
                     className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors"
                     required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Meet Time</label>
+                  <input
+                    type="time"
+                    value={newMatch.meetTime || ''}
+                    onChange={(e) => setNewMatch({ ...newMatch, meetTime: e.target.value })}
+                    className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors"
                   />
                 </div>
 
@@ -857,11 +933,11 @@ export function Dashboard() {
 
       {/* Edit Match Modal */}
       {showEditModal && editingMatch && (
-        <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-[100] overflow-y-auto px-4 py-8 flex justify-center items-start sm:items-center">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-turf-surface/60 backdrop-blur-xl border border-chalk-white/10 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+            className="bg-turf-surface/60 backdrop-blur-xl border border-chalk-white/10 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl relative"
           >
             <div className="absolute inset-0 pitch-grid opacity-10 pointer-events-none" />
             <div className="relative z-10">
@@ -880,7 +956,7 @@ export function Dashboard() {
                     <button
                       type="button"
                       onClick={() => setEditingMatch({ ...editingMatch, type: 'training' })}
-                      className={`flex-1 py-3.5 rounded-xl font-black uppercase tracking-tight transition-all font-display italic ${editingMatch.type === 'training' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/40 border border-chalk-white/5'}`}
+                      className={`flex-1 py-3.5 rounded-xl font-black uppercase tracking-tight transition-all font-display italic ${editingMatch.type === 'training' ? 'bg-blue-500 text-slate-50 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/40 border border-chalk-white/5'}`}
                     >
                       Training
                     </button>

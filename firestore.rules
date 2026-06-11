@@ -39,7 +39,18 @@ service cloud.firestore {
     function isParentOfPlayer(playerId) {
       return isAuthenticated() &&
              exists(/databases/$(database)/documents/players/$(playerId)) &&
-             request.auth.uid in get(/databases/$(database)/documents/players/$(playerId)).data.parentIds;
+             request.auth.uid in get(/databases/$(database)/documents/players/$(playerId)).data.get('parentIds', []);
+    }
+
+    function isJoiningAsParent() {
+      let diff = request.resource.data.diff(resource.data);
+      let existingParents = resource.data.get('parentIds', []);
+      let newParents = request.resource.data.parentIds;
+      return diff.affectedKeys().hasOnly(['parentIds']) &&
+             newParents.hasAll(existingParents) &&
+             newParents.size() == existingParents.size() + 1 &&
+             request.auth.uid in newParents &&
+             newParents.size() <= 3;
     }
 
     function isAdmin() {
@@ -58,7 +69,12 @@ service cloud.firestore {
              (!('role' in data) || data.role == null || data.role in ['coach', 'parent', 'player']) &&
              (!('displayName' in data) || data.displayName is string) &&
              (!('photoURL' in data) || data.photoURL is string) &&
-             (!('teamId' in data) || data.teamId is string);
+             (!('teamId' in data) || data.teamId is string) &&
+             (!('joinedTeams' in data) || data.joinedTeams is list) &&
+             (!('subscriptionStatus' in data) || data.subscriptionStatus in ['active', 'inactive']) &&
+             (!('trialEndDate' in data) || data.trialEndDate is string) &&
+             (!('stripeCustomerId' in data) || data.stripeCustomerId is string) &&
+             (!('fcmToken' in data) || data.fcmToken is string);
     }
 
     function isValidTeam(data) {
@@ -66,7 +82,8 @@ service cloud.firestore {
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.code is string && data.code.size() == 6 &&
              data.coachId is string &&
-             (!('halfDuration' in data) || (data.halfDuration is number && data.halfDuration > 0 && data.halfDuration <= 60));
+             (!('halfDuration' in data) || (data.halfDuration is number && data.halfDuration > 0 && data.halfDuration <= 60)) &&
+             (!('maxMatchPlayers' in data) || (data.maxMatchPlayers is number && data.maxMatchPlayers > 0 && data.maxMatchPlayers <= 30));
     }
 
     function isValidPlayerCreate(data) {
@@ -158,44 +175,6 @@ service cloud.firestore {
              (!('abilityRating' in data) || (data.abilityRating is number && data.abilityRating >= 1 && data.abilityRating <= 5));
     }
 
-    function isValidNewsPost(data) {
-      return hasRequiredFields(['teamId', 'authorId', 'authorName', 'content', 'createdAt']) &&
-             data.teamId is string &&
-             data.authorId is string &&
-             data.authorName is string &&
-             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
-             data.createdAt is string &&
-             (!('imageUrl' in data) || data.imageUrl is string) &&
-             (!('likesCount' in data) || data.likesCount is number) &&
-             (!('commentsCount' in data) || data.commentsCount is number);
-    }
-
-    function isValidNewsComment(data) {
-      return hasRequiredFields(['postId', 'teamId', 'authorId', 'authorName', 'content', 'createdAt']) &&
-             data.postId is string &&
-             data.teamId is string &&
-             data.authorId is string &&
-             data.authorName is string &&
-             data.content is string && data.content.size() > 0 && data.content.size() < 1000 &&
-             data.createdAt is string;
-    }
-
-    function isValidNewsLike(data) {
-      return hasRequiredFields(['postId', 'userId', 'teamId']) &&
-             data.postId is string &&
-             data.userId is string &&
-             data.teamId is string;
-    }
-
-    function isValidChatMessage(data) {
-      return hasRequiredFields(['teamId', 'senderId', 'senderName', 'content', 'createdAt']) &&
-             data.teamId is string &&
-             data.senderId is string &&
-             data.senderName is string &&
-             data.content is string && data.content.size() > 0 && data.content.size() < 2000 &&
-             data.createdAt is string;
-    }
-
     function isValidNote(data) {
       return hasRequiredFields(['teamId', 'authorId', 'content', 'type', 'createdAt']) &&
              data.teamId is string &&
@@ -255,6 +234,17 @@ service cloud.firestore {
              (!('paidAt' in data) || data.paidAt is string);
     }
 
+    function isValidMatchEvent(data) {
+      return hasRequiredFields(['type', 'team', 'playerId', 'minute', 'formationId', 'createdAt']) &&
+             data.type is string &&
+             data.team in ['us', 'them'] &&
+             data.playerId is string &&
+             data.minute is number &&
+             data.formationId is string &&
+             (data.createdAt is timestamp || data.createdAt == request.time) &&
+             (!('subPlayerId' in data) || data.subPlayerId is string);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -273,7 +263,7 @@ service cloud.firestore {
     match /players/{playerId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidPlayerCreate(request.resource.data) && isCoach(request.resource.data.teamId);
-      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isCoach(resource.data.teamId) || isParentOfPlayer(playerId));
+      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isCoach(resource.data.teamId) || isParentOfPlayer(playerId) || isJoiningAsParent());
       allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
     }
 
@@ -282,6 +272,11 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(request.resource.data.teamId);
       allow update: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(resource.data.teamId);
       allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+
+      match /events/{eventId} {
+        allow read: if isTeamMember(get(/databases/$(database)/documents/matches/$(matchId)).data.teamId);
+        allow create: if isAuthenticated() && isValidMatchEvent(request.resource.data) && isCoach(get(/databases/$(database)/documents/matches/$(matchId)).data.teamId);
+      }
     }
 
     match /availabilities/{availabilityId} {
@@ -300,31 +295,16 @@ service cloud.firestore {
       allow write: if isCoach(request.resource.data.teamId) && isValidAttendance(request.resource.data);
     }
 
+    match /seasonSummaries/{summaryId} {
+      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow create: if isCoach(request.resource.data.teamId) || isAdmin();
+      allow update: if isCoach(resource.data.teamId) || isAdmin();
+      allow delete: if isCoach(resource.data.teamId) || isAdmin();
+    }
+
     match /playerNotes/{noteId} {
       allow read: if isCoach(resource.data.teamId) || isAdmin();
       allow write: if isCoach(request.resource.data.teamId) && isValidPlayerNote(request.resource.data);
-    }
-
-    match /newsPosts/{postId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow create: if isCoach(request.resource.data.teamId) && isValidNewsPost(request.resource.data);
-      allow update, delete: if isCoach(resource.data.teamId) && isValidNewsPost(request.resource.data);
-    }
-
-    match /newsComments/{commentId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow create: if isTeamMember(request.resource.data.teamId) && isValidNewsComment(request.resource.data);
-      allow delete: if isOwner(resource.data.authorId) || isCoach(resource.data.teamId);
-    }
-
-    match /newsLikes/{likeId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow write: if isOwner(request.resource.data.userId) && isValidNewsLike(request.resource.data);
-    }
-
-    match /chatMessages/{messageId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow create: if isTeamMember(request.resource.data.teamId) && isValidChatMessage(request.resource.data);
     }
 
     match /notes/{noteId} {

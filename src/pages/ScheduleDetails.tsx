@@ -4,10 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { doc, collection, query, where, onSnapshot, setDoc, updateDoc, addDoc, serverTimestamp, orderBy, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, MapPin, Clock, ArrowLeft, Check, X, HelpCircle, Navigation, Users, FileText, UserCheck, AlertCircle, Goal, ArrowLeftRight, AlertTriangle, UserMinus, Plus, Trash2, Tag, Pencil, Trophy, Activity, Play, Shield, Edit2 } from 'lucide-react';
+import { Calendar as CalendarIcon, MapPin, Clock, ArrowLeft, Check, X, HelpCircle, Navigation, Users, FileText, UserCheck, AlertCircle, Goal, ArrowLeftRight, AlertTriangle, UserMinus, Plus, Trash2, Tag, Pencil, Trophy, Activity, Play, Shield, Edit2, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import { ConfirmModal } from '../components/ConfirmModal';
+import { MatchSummaryModal } from '../components/MatchSummaryModal';
 
 export function ScheduleDetails() {
   const { id } = useParams<{ id: string }>();
@@ -23,6 +24,7 @@ export function ScheduleDetails() {
   const [savingNotes, setSavingNotes] = useState(false);
   const [sessionNotes, setSessionNotes] = useState<any[]>([]);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showMatchSummary, setShowMatchSummary] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingMatch, setEditingMatch] = useState<any>(null);
   const [newNote, setNewNote] = useState({ content: '', playerIds: [] as string[] });
@@ -41,6 +43,31 @@ export function ScheduleDetails() {
   });
 
   const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  const [teamName, setTeamName] = useState<string>('Your Team');
+  const [maxMatchPlayers, setMaxMatchPlayers] = useState<number>(16);
+
+  useEffect(() => {
+    if (!profile?.teamId) return;
+    const unsub = onSnapshot(doc(db, 'teams', profile.teamId), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setTeamName(data.name || 'Your Team');
+        setMaxMatchPlayers(parseInt(data.maxMatchPlayers?.toString() || '16', 10));
+      }
+    });
+    return () => unsub();
+  }, [profile?.teamId]);
+
+  useEffect(() => {
+    if (showEditModal || showNoteModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showEditModal, showNoteModal]);
 
   useEffect(() => {
     if (match?.onPitch) {
@@ -49,13 +76,25 @@ export function ScheduleDetails() {
   }, [match?.onPitch]);
 
   const toggleStartingPlayer = (playerId: string) => {
-    setStartingLineup(prev => 
-      prev.includes(playerId) ? prev.filter(id => id !== playerId) : [...prev, playerId]
-    );
+    setStartingLineup(prev => {
+      if (prev.includes(playerId)) {
+        return prev.filter(id => id !== playerId);
+      }
+      if (prev.length >= maxMatchPlayers) {
+        alert(`You can only select a maximum of ${maxMatchPlayers} players`);
+        return prev;
+      }
+      return [...prev, playerId];
+    });
   };
 
   const handleStartMatch = async () => {
     if (!match || !profile?.teamId) return;
+    
+    if (startingLineup.length > maxMatchPlayers) {
+      alert(`You cannot start the match with more than ${maxMatchPlayers} players.`);
+      return;
+    }
     
     const confirmedPlayers = players.filter(p => availabilities[p.id]?.status === 'going');
     const bench = confirmedPlayers.filter(p => !startingLineup.includes(p.id)).map(p => p.id);
@@ -350,26 +389,27 @@ export function ScheduleDetails() {
   const parentsPotmVotes = calculatedParentsPotmId ? voteCounts[calculatedParentsPotmId] : 0;
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto pb-20 relative">
+    <div className="min-h-screen pb-20 relative">
       <div className="absolute inset-0 pitch-grid pointer-events-none opacity-5" />
       
-      <button 
-        onClick={() => navigate('/')}
-        className="flex items-center gap-2 text-chalk-white/40 hover:text-pitch-green transition-colors relative z-10 font-display italic uppercase text-[10px] font-black tracking-widest"
-      >
-        <ArrowLeft size={16} strokeWidth={3} />
-        <span>Back to Schedule</span>
-      </button>
+      <div className="space-y-8 max-w-4xl mx-auto p-4 sm:p-6">
+        <button 
+          onClick={() => navigate('/')}
+          className="flex items-center gap-2 text-chalk-white/40 hover:text-pitch-green transition-colors relative z-10 font-display italic uppercase text-[10px] font-black tracking-widest"
+        >
+          <ArrowLeft size={16} strokeWidth={3} />
+          <span>Back to Schedule</span>
+        </button>
 
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-turf-surface/30 backdrop-blur-xl border border-chalk-white/10 rounded-[2.5rem] p-8 sm:p-10 shadow-2xl relative overflow-hidden z-10"
-      >
-        <div className="absolute inset-0 pitch-grid opacity-10 pointer-events-none" />
-        
-        <div className="relative z-10">
-          <div className="flex justify-between items-start mb-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-turf-surface/30 backdrop-blur-xl border border-chalk-white/10 rounded-[2.5rem] p-8 sm:p-10 shadow-2xl relative overflow-hidden z-10"
+        >
+          <div className="absolute inset-0 pitch-grid opacity-10 pointer-events-none" />
+          
+          <div className="relative z-10">
+            <div className="flex justify-between items-start mb-6">
             <div className="flex items-center gap-2">
               <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border font-display italic ${match.type === 'match' ? 'bg-pitch-green/10 text-pitch-green border-pitch-green/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
                 {match.type === 'match' ? 'Match' : 'Training'}
@@ -408,16 +448,16 @@ export function ScheduleDetails() {
             {match.type === 'match' ? `vs ${match.opponent}` : 'Training Session'}
           </h1>
 
-          <div className="flex flex-wrap items-center gap-3 mb-10">
-            <div className="flex items-center gap-2 text-pitch-green bg-pitch-green/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border border-pitch-green/20 font-display italic">
+          <div className="flex flex-wrap items-stretch sm:items-center gap-3 mb-10">
+            <div className="flex-1 sm:flex-none flex items-center gap-2 text-pitch-green bg-pitch-green/10 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-pitch-green/20 font-display italic">
               <Check size={14} strokeWidth={4} />
               <span>{confirmedPlayers.length} Confirmed</span>
             </div>
-            <div className="flex items-center gap-2 text-yellow-500 bg-yellow-500/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border border-yellow-500/20 font-display italic">
+            <div className="flex-1 sm:flex-none flex items-center gap-2 text-yellow-500 bg-yellow-500/10 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-yellow-500/20 font-display italic">
               <HelpCircle size={14} strokeWidth={4} />
               <span>{maybePlayers.length} Maybe</span>
             </div>
-            <div className="flex items-center gap-2 text-red-500 bg-red-500/10 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border border-red-500/20 font-display italic">
+            <div className="flex-1 sm:flex-none flex items-center gap-2 text-red-500 bg-red-500/10 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-red-500/20 font-display italic">
               <X size={14} strokeWidth={4} />
               <span>{notGoingPlayers.length} Unavailable</span>
             </div>
@@ -425,15 +465,15 @@ export function ScheduleDetails() {
 
           {match.type === 'match' && (match.status === 'in-progress' || match.status === 'completed') && (
             <div className="space-y-6 mb-10">
-              <div className="flex items-center gap-8 bg-pitch-dark/50 p-6 rounded-[2rem] border border-chalk-white/5 w-max backdrop-blur-md">
-                <div className="text-center">
+              <div className="flex items-center justify-between sm:justify-start gap-4 sm:gap-8 bg-pitch-dark/50 p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border border-chalk-white/5 w-full sm:w-max backdrop-blur-md overflow-hidden">
+                <div className="text-center flex-1 sm:flex-none">
                   <div className="text-[10px] text-chalk-white/20 uppercase tracking-widest mb-2 font-display italic">Us</div>
-                  <div className="text-6xl font-black text-chalk-white font-display italic leading-none">{match.scoreUs || 0}</div>
+                  <div className="text-4xl sm:text-6xl font-black text-chalk-white font-display italic leading-none">{match.scoreUs || 0}</div>
                 </div>
-                <div className="text-4xl font-black text-pitch-green/20 font-display italic">-</div>
-                <div className="text-center">
-                  <div className="text-[10px] text-chalk-white/20 uppercase tracking-widest mb-2 font-display italic break-words">{match.opponent}</div>
-                  <div className="text-6xl font-black text-chalk-white font-display italic leading-none">{match.scoreThem || 0}</div>
+                <div className="text-2xl sm:text-4xl font-black text-pitch-green/20 font-display italic shrink-0">-</div>
+                <div className="text-center flex-1 sm:flex-none min-w-0">
+                  <div className="text-[10px] text-chalk-white/20 uppercase tracking-widest mb-2 font-display italic truncate sm:break-words">{match.opponent}</div>
+                  <div className="text-4xl sm:text-6xl font-black text-chalk-white font-display italic leading-none">{match.scoreThem || 0}</div>
                 </div>
               </div>
 
@@ -469,7 +509,7 @@ export function ScheduleDetails() {
             </div>
           )}
 
-          <div className="grid sm:grid-cols-2 gap-8 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 mb-4">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 bg-pitch-dark/50 rounded-2xl flex items-center justify-center shrink-0 border border-chalk-white/5">
                 <Clock size={24} className="text-pitch-green" />
@@ -478,20 +518,32 @@ export function ScheduleDetails() {
                 <p className="text-[10px] text-chalk-white/20 font-black uppercase tracking-widest mb-1 font-display italic">Kick Off</p>
                 {match.status === 'postponed' && !match.date ? (
                   <div className="space-y-1">
-                    <p className="text-xl font-black text-red-400 uppercase italic font-display tracking-tight">Postponed TBA</p>
+                    <p className="text-xl font-black text-red-400 uppercase italic font-display tracking-tight leading-tight">Postponed TBA</p>
                     {match.postponedNote && (
                       <p className="text-chalk-white/40 font-bold uppercase tracking-widest text-[10px]">Original: {match.postponedNote.split(' - ')[0]}</p>
                     )}
                   </div>
                 ) : (
                   <>
-                    <p className={`text-xl font-black uppercase italic font-display tracking-tight ${match.status === 'postponed' ? 'text-red-400' : 'text-chalk-white'}`}>
+                    <p className={`text-xl font-black uppercase italic font-display tracking-tight leading-tight ${match.status === 'postponed' ? 'text-red-400' : 'text-chalk-white'}`}>
                       {match.date ? format(new Date(match.date), 'EEEE, MMM d') : 'TBA'}
-                      {match.status === 'postponed' && ' (Postponed)'}
+                      {match.status === 'postponed' && ' (Posposed)'}
                     </p>
-                    <p className="text-chalk-white/40 font-bold uppercase tracking-widest text-[10px] mt-1">{match.date ? format(new Date(match.date), 'h:mm a') : 'TBA'}</p>
+                    <p className="text-chalk-white/40 font-bold uppercase tracking-widest text-[10px] mt-1">
+                      {match.date ? format(new Date(match.date), 'h:mm a') : 'TBA'}
+                    </p>
                   </>
                 )}
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-pitch-dark/50 rounded-2xl flex items-center justify-center shrink-0 border border-chalk-white/5">
+                <UserCheck size={24} className="text-pitch-green" />
+              </div>
+              <div>
+                <p className="text-[10px] text-chalk-white/20 font-black uppercase tracking-widest mb-1 font-display italic">Meet Time</p>
+                <p className="text-xl font-black text-chalk-white uppercase italic font-display tracking-tight leading-tight break-words">{match.meetTime || 'TBD'}</p>
               </div>
             </div>
 
@@ -501,7 +553,7 @@ export function ScheduleDetails() {
               </div>
               <div>
                 <p className="text-[10px] text-chalk-white/20 font-black uppercase tracking-widest mb-1 font-display italic">Location</p>
-                <p className="text-xl font-black text-chalk-white uppercase italic font-display tracking-tight break-words">{match.location || 'TBD'}</p>
+                <p className="text-xl font-black text-chalk-white uppercase italic font-display tracking-tight leading-tight break-words">{match.location || 'TBD'}</p>
                 {match.postcode && (
                   <div className="mt-2">
                     <a 
@@ -534,8 +586,14 @@ export function ScheduleDetails() {
               <Shield size={24} className="text-pitch-green" />
               Starting Lineup
             </h2>
-            <div className="text-[10px] font-black text-pitch-green uppercase tracking-widest bg-pitch-green/10 px-3 py-1 rounded-lg border border-pitch-green/20 font-display italic">
-              {startingLineup.length} SELECTED
+            <div className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg border font-display italic ${
+              startingLineup.length > maxMatchPlayers 
+                ? 'bg-red-500/10 text-red-500 border-red-500/20' 
+                : startingLineup.length === maxMatchPlayers
+                  ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+                  : 'bg-pitch-green/10 text-pitch-green border-pitch-green/20'
+            }`}>
+              {startingLineup.length} / {maxMatchPlayers} SELECTED
             </div>
           </div>
           
@@ -544,24 +602,32 @@ export function ScheduleDetails() {
           </p>
 
           <div className="grid gap-3 mb-8">
-            {confirmedPlayers.map(player => (
+            {confirmedPlayers.map(player => {
+              const isSelected = startingLineup.includes(player.id);
+              const isMaxedOut = !isSelected && startingLineup.length >= maxMatchPlayers;
+              
+              return (
               <button
                 key={player.id}
                 onClick={() => toggleStartingPlayer(player.id)}
+                disabled={isMaxedOut}
                 className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
-                  startingLineup.includes(player.id) 
+                  isSelected 
                     ? 'bg-pitch-green/20 border-pitch-green text-pitch-green shadow-[0_0_15px_rgba(22,163,74,0.2)]' 
-                    : 'bg-pitch-dark/40 border-chalk-white/5 text-chalk-white/40 hover:border-chalk-white/20'
+                    : isMaxedOut
+                      ? 'bg-pitch-dark/80 border-chalk-white/5 text-chalk-white/20 cursor-not-allowed opacity-50'
+                      : 'bg-pitch-dark/40 border-chalk-white/5 text-chalk-white/40 hover:border-chalk-white/20'
                 }`}
               >
                 <span className="text-base font-black uppercase italic font-display tracking-tight">{player.name}</span>
                 <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                  startingLineup.includes(player.id) ? 'border-pitch-green bg-pitch-green' : 'border-chalk-white/10'
+                  isSelected ? 'border-pitch-green bg-pitch-green' : isMaxedOut ? 'border-chalk-white/5' : 'border-chalk-white/10'
                 }`}>
-                  {startingLineup.includes(player.id) && <Check size={14} strokeWidth={4} className="text-pitch-dark" />}
+                  {isSelected && <Check size={14} strokeWidth={4} className="text-pitch-dark" />}
                 </div>
               </button>
-            ))}
+              );
+            })}
             {confirmedPlayers.length === 0 && (
               <div className="text-center py-8 bg-pitch-dark/30 rounded-2xl border border-dashed border-chalk-white/5">
                 <p className="text-[10px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">
@@ -583,7 +649,7 @@ export function ScheduleDetails() {
           <button
             onClick={() => navigate(`/live?matchId=${match.id}`)}
             disabled={match.status === 'postponed'}
-            className="w-full mt-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 border border-slate-700"
+            className="w-full mt-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-50 py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 border border-slate-700"
           >
             <Edit2 size={20} />
             Manual Entry / Edit Data
@@ -624,11 +690,19 @@ export function ScheduleDetails() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative z-10"
+          className="relative z-10 flex flex-col gap-4"
         >
           <button
+            onClick={() => setShowMatchSummary(true)}
+            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-900 py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 shadow-[0_0_20px_rgba(0,0,0,0.1)]"
+          >
+            <Share2 size={20} />
+            Generate Match Summary
+          </button>
+          
+          <button
             onClick={() => navigate(`/live?matchId=${match.id}`)}
-            className="w-full bg-slate-800 hover:bg-slate-700 text-white py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 border border-slate-700"
+            className="w-full bg-slate-800 hover:bg-slate-700 text-slate-50 py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 border border-slate-700"
           >
             <Edit2 size={20} />
             Edit Match Details
@@ -637,7 +711,7 @@ export function ScheduleDetails() {
       )}
 
       {/* Parent/Coach View: Set Availability */}
-      {(isCoach || myPlayers.length > 0) && (
+      {(isCoach || myPlayers.length > 0) && match.type !== 'training' && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -980,12 +1054,12 @@ export function ScheduleDetails() {
       {/* Edit Match Modal */}
       <AnimatePresence>
         {showEditModal && editingMatch && (
-          <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-pitch-dark/90 backdrop-blur-md z-50 overflow-y-auto pt-8 pb-20 px-4 flex justify-center items-start sm:items-center">
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-turf-surface/60 backdrop-blur-xl border border-chalk-white/10 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl relative overflow-hidden"
+              className="bg-turf-surface/60 backdrop-blur-xl border border-chalk-white/10 rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl relative"
             >
               <div className="absolute inset-0 pitch-grid opacity-10 pointer-events-none" />
               <div className="relative z-10">
@@ -1004,7 +1078,7 @@ export function ScheduleDetails() {
                       <button
                         type="button"
                         onClick={() => setEditingMatch({ ...editingMatch, type: 'training' })}
-                        className={`flex-1 py-3.5 rounded-xl font-black uppercase tracking-tight transition-all font-display italic ${editingMatch.type === 'training' ? 'bg-blue-500 text-white shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/40 border border-chalk-white/5'}`}
+                        className={`flex-1 py-3.5 rounded-xl font-black uppercase tracking-tight transition-all font-display italic ${editingMatch.type === 'training' ? 'bg-blue-500 text-slate-50 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/40 border border-chalk-white/5'}`}
                       >
                         Training
                       </button>
@@ -1064,6 +1138,16 @@ export function ScheduleDetails() {
                   </div>
 
                   <div>
+                    <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Meet Time</label>
+                    <input
+                      type="time"
+                      value={editingMatch.meetTime || ''}
+                      onChange={(e) => setEditingMatch({ ...editingMatch, meetTime: e.target.value })}
+                      className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors"
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Location</label>
                     <input
                       type="text"
@@ -1113,7 +1197,7 @@ export function ScheduleDetails() {
       {/* Add Note Modal */}
       <AnimatePresence>
         {showNoteModal && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 overflow-y-auto pt-8 pb-20 px-4 flex justify-center items-start sm:items-center">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1121,8 +1205,8 @@ export function ScheduleDetails() {
               className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-6"
             >
               <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-white">Session Observation</h2>
-                <button onClick={() => setShowNoteModal(false)} className="text-slate-400 hover:text-white">
+                <h2 className="text-xl font-bold text-slate-50">Session Observation</h2>
+                <button onClick={() => setShowNoteModal(false)} className="text-slate-400 hover:text-slate-50">
                   <X size={24} />
                 </button>
               </div>
@@ -1134,7 +1218,7 @@ export function ScheduleDetails() {
                     value={newNote.content}
                     onChange={(e) => setNewNote(prev => ({ ...prev, content: e.target.value }))}
                     placeholder="Write your observations here..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 min-h-[150px]"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-2xl p-4 text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-green-500/50 min-h-[150px]"
                   />
                 </div>
 
@@ -1161,7 +1245,7 @@ export function ScheduleDetails() {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={() => setShowNoteModal(false)}
-                  className="flex-1 px-6 py-3 rounded-2xl bg-slate-800 text-white font-bold hover:bg-slate-700 transition-all"
+                  className="flex-1 px-6 py-3 rounded-2xl bg-slate-800 text-slate-50 font-bold hover:bg-slate-700 transition-all"
                 >
                   Cancel
                 </button>
@@ -1185,6 +1269,15 @@ export function ScheduleDetails() {
         onConfirm={confirmModal.onConfirm}
         onCancel={closeConfirmModal}
       />
+      <MatchSummaryModal
+        isOpen={showMatchSummary}
+        onClose={() => setShowMatchSummary(false)}
+        teamName={teamName}
+        match={match}
+        presentPlayers={confirmedPlayers.length}
+        parentsPotmName={parentsPotmName}
+      />
+      </div>
     </div>
   );
 }

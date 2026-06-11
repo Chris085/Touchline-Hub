@@ -14,6 +14,7 @@ interface Player {
   inviteCode?: string;
   motmAwards: number;
   position?: string;
+  profileImageUrl?: string;
 }
 
 import { ConfirmModal } from '../components/ConfirmModal';

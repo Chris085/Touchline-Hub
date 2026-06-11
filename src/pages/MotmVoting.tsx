@@ -117,7 +117,7 @@ export function MotmVoting() {
         <div className="w-20 h-20 bg-slate-900 rounded-full flex items-center justify-center mb-6 border border-slate-800 shadow-xl">
           <Award size={40} className="text-slate-600" />
         </div>
-        <h2 className="text-2xl font-bold text-white mb-2">No Matches Yet</h2>
+        <h2 className="text-2xl font-bold text-slate-50 mb-2">No Matches Yet</h2>
         <p className="text-slate-400 max-w-md">
           Schedule a match in the Dashboard to start MOTM voting.
         </p>
@@ -131,7 +131,7 @@ export function MotmVoting() {
         <div className="w-10 h-10 bg-yellow-500/20 rounded-xl flex items-center justify-center">
           <Trophy className="text-yellow-500" size={24} />
         </div>
-        <h1 className="text-2xl font-bold text-white">Man of the Match</h1>
+        <h1 className="text-2xl font-bold text-slate-50">Man of the Match</h1>
       </div>
 
       {/* Schedule List */}
@@ -153,7 +153,7 @@ export function MotmVoting() {
                   <CalendarIcon size={14} className="text-slate-400" />
                 </div>
                 <div>
-                  <h4 className="text-white font-bold text-sm leading-tight line-clamp-1">vs {match.opponent}</h4>
+                  <h4 className="text-slate-50 font-bold text-sm leading-tight line-clamp-1">vs {match.opponent}</h4>
                   <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
                     <Clock size={10} />
                     {match.date ? format(new Date(match.date), 'MMM d, yyyy') : 'Postponed TBA'}
@@ -219,7 +219,7 @@ export function MotmVoting() {
                   Voting Closed
                 </span>
               )}
-              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight break-words">vs {selectedMatch.opponent}</h2>
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-50 tracking-tight break-words">vs {selectedMatch.opponent}</h2>
               <p className="text-slate-400 mt-1 flex items-center gap-2 text-sm">
                 <Clock size={14} />
                 {selectedMatch.date ? format(new Date(selectedMatch.date), 'MMM d, yyyy') : 'Postponed TBA'}
@@ -243,7 +243,7 @@ export function MotmVoting() {
                   <button
                     key={player.id}
                     onClick={() => handleVote(player.id)}
-                    className="bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-medium transition-all flex items-center justify-between group border border-transparent hover:border-yellow-500/50"
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-50 p-4 rounded-xl font-medium transition-all flex items-center justify-between group border border-transparent hover:border-yellow-500/50"
                   >
                     <span className="text-lg">{player.name}</span>
                     <Star size={20} className="text-slate-600 group-hover:text-yellow-500 transition-colors" />
@@ -275,11 +275,11 @@ export function MotmVoting() {
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${idx === 0 ? 'bg-yellow-500 text-slate-950' : 'bg-slate-700 text-slate-400'}`}>
                             {idx + 1}
                           </div>
-                          <span className="text-lg font-medium text-white">{player.name}</span>
+                          <span className="text-lg font-medium text-slate-50">{player.name}</span>
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="flex items-center gap-2">
-                            <span className="text-2xl font-black text-white">{player.votes}</span>
+                            <span className="text-2xl font-black text-slate-50">{player.votes}</span>
                             <span className="text-xs text-slate-500 uppercase tracking-wider">Votes</span>
                           </div>
                           {selectedMatch.isPotmVotingOpen && (

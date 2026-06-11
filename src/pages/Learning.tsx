@@ -100,7 +100,7 @@ export function Learning() {
           <BookOpen className="text-green-500" size={24} />
         </div>
         <div>
-          <h1 className="text-2xl font-black text-white uppercase tracking-tight italic font-display">Learning Center</h1>
+          <h1 className="text-2xl font-black text-slate-50 uppercase tracking-tight italic font-display">Learning Center</h1>
           <p className="text-sm text-slate-400">Master every feature of The Touchline Hub</p>
         </div>
       </div>
@@ -113,7 +113,7 @@ export function Learning() {
               className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors"
             >
               <div className="text-left">
-                <h3 className="text-lg font-bold text-white">{mod.title}</h3>
+                <h3 className="text-lg font-bold text-slate-50">{mod.title}</h3>
                 <p className="text-sm text-slate-400">{mod.description}</p>
               </div>
               {expandedId === mod.id ? (
@@ -136,7 +136,7 @@ export function Learning() {
                       <p className="text-slate-300 leading-relaxed">{mod.content}</p>
                       
                       <div className="mt-6">
-                        <h4 className="text-sm font-bold text-white uppercase tracking-widest mb-3">Key Features</h4>
+                        <h4 className="text-sm font-bold text-slate-50 uppercase tracking-widest mb-3">Key Features</h4>
                         <ul className="space-y-2">
                           {mod.features.map((feature, idx) => (
                             <li key={idx} className="flex items-start gap-2 text-slate-300">

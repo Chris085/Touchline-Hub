@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { doc, collection, query, where, onSnapshot, addDoc, orderBy, updateDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { format, isAfter, startOfDay } from 'date-fns';
-import { ArrowLeft, User, Star, FileText, Activity, CheckCircle, AlertCircle, XCircle, Heart, Camera, Upload, Trophy, Target, TrendingUp, Calendar, Clock, MapPin, Award } from 'lucide-react';
+import { ArrowLeft, User, Users, Star, FileText, Activity, CheckCircle, AlertCircle, XCircle, Heart, Camera, Upload, Trophy, Target, TrendingUp, Calendar, Clock, MapPin, Award } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export function PlayerProfile() {
@@ -159,18 +159,38 @@ export function PlayerProfile() {
     const completedMatches = matches.filter(m => m.status === 'completed' && m.type === 'match');
     
     let goals = 0;
-    let assists = 0;
+    let assistsCount = 0;
     let motmAwards = 0;
+    let gamesPlayed = 0;
     const motmHistory: any[] = [];
 
     completedMatches.forEach(m => {
+      // Check if player was involved
+      const hasEvents = (m.events || []).some((e: any) => e.playerId === id || e.subPlayerId === id || e.assistPlayerId === id || e.assistId === id);
+      const isOnPitch = (m.onPitch || []).includes(id);
+      const isOnBench = (m.onBench || []).includes(id);
+      
+      const att = attendances.find(a => a.matchId === m.id);
+      const avail = availabilities.find(a => a.matchId === m.id);
+      
+      let wasPresent = false;
+      if (att) {
+        wasPresent = att.status === 'present' || att.status === 'late';
+      } else if (avail) {
+        wasPresent = avail.status === 'going';
+      }
+
+      if (hasEvents || isOnPitch || isOnBench || wasPresent) {
+        gamesPlayed++;
+      }
+
       // Stats from events
       (m.events || []).forEach((event: any) => {
         if (event.type === 'goal' && event.playerId === id) {
           goals++;
         }
-        if (event.type === 'goal' && event.assistId === id) {
-          assists++;
+        if (event.type === 'goal' && (event.assistPlayerId === id || event.assistId === id)) {
+          assistsCount++;
         }
       });
 
@@ -204,12 +224,13 @@ export function PlayerProfile() {
 
     return {
       goals,
-      assists,
+      assists: assistsCount,
       motmAwards,
+      gamesPlayed,
       motmHistory: motmHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
       upcoming
     };
-  }, [id, player, matches, availabilities]);
+  }, [id, player, matches, availabilities, attendances]);
 
   const handleSetAvailability = async (matchId: string, status: 'going' | 'not-going' | 'maybe') => {
     if (!profile?.uid || !profile?.teamId || !id) return;
@@ -358,11 +379,32 @@ export function PlayerProfile() {
     }
   };
 
-  const presentCount = attendances.filter(a => a.status === 'present').length;
-  const lateCount = attendances.filter(a => a.status === 'late').length;
-  const absentCount = attendances.filter(a => a.status === 'absent').length;
-  const totalSessions = attendances.length;
-  const attendanceRate = totalSessions > 0 ? Math.round((presentCount / totalSessions) * 100) : 0;
+  const allSessionRecords = new Set([
+    ...attendances.map(a => a.matchId),
+    ...availabilities.map(a => a.matchId)
+  ]);
+
+  let presentCount = 0;
+  let lateCount = 0;
+  let absentCount = 0;
+
+  allSessionRecords.forEach(matchId => {
+    const att = attendances.find(a => a.matchId === matchId);
+    const avail = availabilities.find(a => a.matchId === matchId);
+    
+    if (att) {
+      if (att.status === 'present') presentCount++;
+      else if (att.status === 'late') lateCount++;
+      else if (att.status === 'absent') absentCount++;
+    } else if (avail) {
+      if (avail.status === 'going') presentCount++;
+      else if (avail.status === 'not-going') absentCount++;
+      // 'maybe' could be tracked separately if needed, but omitted from core stats
+    }
+  });
+
+  const totalSessions = allSessionRecords.size;
+  const attendanceRate = totalSessions > 0 ? Math.round(((presentCount + lateCount) / totalSessions) * 100) : 0;
 
   const calculateAmountOwed = () => {
     if (!playerBalance || !team) return 0;
@@ -377,7 +419,7 @@ export function PlayerProfile() {
     <div className="max-w-4xl mx-auto space-y-6 pb-20">
       <button 
         onClick={() => navigate(-1)}
-        className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+        className="flex items-center gap-2 text-slate-400 hover:text-slate-50 transition-colors"
       >
         <ArrowLeft size={20} />
         <span>Back</span>
@@ -420,10 +462,10 @@ export function PlayerProfile() {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingImage}
-                  className="absolute inset-0 bg-black/50 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed z-10"
+                  className="absolute inset-0 bg-slate-950/50 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed z-10"
                 >
-                  <Camera size={24} className="text-white" />
-                  <span className="text-[10px] text-white font-bold mt-1">Change Photo</span>
+                  <Camera size={24} className="text-slate-50" />
+                  <span className="text-[10px] text-slate-50 font-bold mt-1">Change Photo</span>
                 </button>
               )}
               <input 
@@ -440,7 +482,7 @@ export function PlayerProfile() {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-slate-50 focus:outline-none focus:border-green-500"
                   placeholder="Player Name"
                 />
                 <div className="flex flex-col sm:flex-row gap-3">
@@ -448,13 +490,13 @@ export function PlayerProfile() {
                     type="text"
                     value={editNumber}
                     onChange={(e) => setEditNumber(e.target.value)}
-                    className="w-full sm:w-24 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500"
+                    className="w-full sm:w-24 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-slate-50 focus:outline-none focus:border-green-500"
                     placeholder="Number"
                   />
                   <select
                     value={editPosition}
                     onChange={(e) => setEditPosition(e.target.value)}
-                    className="w-full sm:flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-500"
+                    className="w-full sm:flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-slate-50 focus:outline-none focus:border-green-500"
                   >
                     <option value="">Position</option>
                     <option value="GK">Goalkeeper (GK)</option>
@@ -479,7 +521,7 @@ export function PlayerProfile() {
                     type="text"
                     value={editProfileImageUrl}
                     onChange={(e) => setEditProfileImageUrl(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-10 py-3 text-white focus:outline-none focus:border-green-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-10 pr-10 py-3 text-slate-50 focus:outline-none focus:border-green-500"
                     placeholder="Profile Image URL"
                   />
                   <Upload size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -510,7 +552,7 @@ export function PlayerProfile() {
                       setEditProfileImageUrl(player.profileImageUrl || '');
                     }} 
                     disabled={updatingProfile}
-                    className="flex-1 sm:flex-none bg-slate-800 text-white px-4 py-3 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50"
+                    className="flex-1 sm:flex-none bg-slate-800 text-slate-50 px-4 py-3 rounded-lg text-sm hover:bg-slate-700 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -518,7 +560,7 @@ export function PlayerProfile() {
               </div>
             ) : (
               <div>
-                <h1 className="text-2xl font-bold text-white pr-12 sm:pr-0">{player.name}</h1>
+                <h1 className="text-2xl font-bold text-slate-50 pr-12 sm:pr-0">{player.name}</h1>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1 text-slate-400">
                   {player.number && <span className="bg-slate-800 px-2 py-0.5 rounded text-sm">#{player.number}</span>}
                   {player.position && <span>{player.position}</span>}
@@ -555,7 +597,7 @@ export function PlayerProfile() {
               </button>
               <button 
                 onClick={() => setIsEditing(true)} 
-                className="text-slate-400 hover:text-white text-sm underline px-2 py-1 shrink-0"
+                className="text-slate-400 hover:text-slate-50 text-sm underline px-2 py-1 shrink-0"
               >
                 Edit
               </button>
@@ -572,25 +614,30 @@ export function PlayerProfile() {
             transition={{ delay: 0.1 }}
             className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
           >
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-50 mb-4 flex items-center gap-2">
               <Trophy size={20} className="text-yellow-500" />
               Season Stats
             </h2>
             
             <div className="grid grid-cols-2 gap-4">
               <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center">
+                <Users size={20} className="text-slate-50 mx-auto mb-2" />
+                <div className="text-2xl font-black text-slate-50 italic font-display">{stats?.gamesPlayed || 0}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Games Played</div>
+              </div>
+              <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center">
                 <Target size={20} className="text-blue-500 mx-auto mb-2" />
-                <div className="text-2xl font-black text-white italic font-display">{stats?.goals || 0}</div>
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Goals</div>
+                <div className="text-2xl font-black text-slate-50 italic font-display">{stats?.goals || 0}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Goals Scored</div>
               </div>
               <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center">
                 <TrendingUp size={20} className="text-green-500 mx-auto mb-2" />
-                <div className="text-2xl font-black text-white italic font-display">{stats?.assists || 0}</div>
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Assists</div>
+                <div className="text-2xl font-black text-slate-50 italic font-display">{stats?.assists || 0}</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Team Assists</div>
               </div>
-              <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center col-span-2">
+              <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-center">
                 <Star size={20} className="text-yellow-500 mx-auto mb-2" />
-                <div className="text-2xl font-black text-white italic font-display">{stats?.motmAwards || 0}</div>
+                <div className="text-2xl font-black text-slate-50 italic font-display">{stats?.motmAwards || 0}</div>
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">MOTM Awards</div>
               </div>
             </div>
@@ -602,7 +649,7 @@ export function PlayerProfile() {
             transition={{ delay: 0.15 }}
             className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
           >
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-50 mb-4 flex items-center gap-2">
               <Activity size={20} className="text-slate-400" />
               Attendance Stats
             </h2>
@@ -610,7 +657,7 @@ export function PlayerProfile() {
             <div className="space-y-4">
               <div className="flex items-center justify-between p-3 bg-slate-950 rounded-xl border border-slate-800">
                 <span className="text-slate-400">Attendance Rate</span>
-                <span className="text-xl font-bold text-white">{attendanceRate}%</span>
+                <span className="text-xl font-bold text-slate-50">{attendanceRate}%</span>
               </div>
               
               <div className="space-y-2">
@@ -619,21 +666,21 @@ export function PlayerProfile() {
                     <CheckCircle size={16} />
                     <span>Present</span>
                   </div>
-                  <span className="font-medium text-white">{presentCount}</span>
+                  <span className="font-medium text-slate-50">{presentCount}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2 text-yellow-400">
                     <AlertCircle size={16} />
                     <span>Late</span>
                   </div>
-                  <span className="font-medium text-white">{lateCount}</span>
+                  <span className="font-medium text-slate-50">{lateCount}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-2 text-red-400">
                     <XCircle size={16} />
                     <span>Absent</span>
                   </div>
-                  <span className="font-medium text-white">{absentCount}</span>
+                  <span className="font-medium text-slate-50">{absentCount}</span>
                 </div>
               </div>
             </div>
@@ -645,7 +692,7 @@ export function PlayerProfile() {
             transition={{ delay: 0.2 }}
             className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
           >
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-50 mb-4 flex items-center gap-2">
               <Calendar size={20} className="text-blue-400" />
               Upcoming Availability
             </h2>
@@ -654,7 +701,7 @@ export function PlayerProfile() {
               {stats?.upcoming.map(m => (
                 <div key={m.id} className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between">
                   <div className="min-w-0">
-                    <div className="text-xs font-black text-white uppercase italic font-display truncate">
+                    <div className="text-xs font-black text-slate-50 uppercase italic font-display truncate">
                       {m.type === 'match' ? `vs ${m.opponent}` : 'Training'}
                     </div>
                     <div className="text-[10px] text-slate-500 flex items-center gap-1">
@@ -720,7 +767,7 @@ export function PlayerProfile() {
             transition={{ delay: 0.25 }}
             className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
           >
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-50 mb-4 flex items-center gap-2">
               <Award size={20} className="text-yellow-500" />
               MOTM History
             </h2>
@@ -732,7 +779,7 @@ export function PlayerProfile() {
                     <Trophy size={20} className="text-yellow-500" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-xs font-black text-white uppercase italic font-display truncate">vs {h.opponent}</div>
+                    <div className="text-xs font-black text-slate-50 uppercase italic font-display truncate">vs {h.opponent}</div>
                     <div className="text-[10px] text-slate-500">{format(new Date(h.date), 'MMM d, yyyy')}</div>
                     <div className="text-[8px] font-bold text-slate-600 uppercase tracking-tighter mt-0.5">Awarded by {h.type}</div>
                   </div>
@@ -752,7 +799,7 @@ export function PlayerProfile() {
               transition={{ delay: 0.2 }}
               className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
             >
-              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-50 mb-4 flex items-center gap-2">
                 <FileText size={20} className="text-slate-400" />
                 Add Player Note
               </h2>
@@ -780,7 +827,7 @@ export function PlayerProfile() {
                     value={newNote}
                     onChange={(e) => setNewNote(e.target.value)}
                     placeholder="Add observations, areas for improvement, etc."
-                    className="w-full h-24 bg-slate-950 border border-slate-800 rounded-xl p-4 text-white focus:outline-none focus:border-blue-500 resize-none"
+                    className="w-full h-24 bg-slate-950 border border-slate-800 rounded-xl p-4 text-slate-50 focus:outline-none focus:border-blue-500 resize-none"
                     required
                   />
                 </div>
@@ -788,7 +835,7 @@ export function PlayerProfile() {
                   <button
                     type="submit"
                     disabled={savingNote || !newNote.trim()}
-                    className="bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-bold transition-colors"
+                    className="bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-slate-50 px-6 py-2 rounded-lg font-bold transition-colors"
                   >
                     {savingNote ? 'Saving...' : 'Save Note'}
                   </button>
@@ -803,7 +850,7 @@ export function PlayerProfile() {
             transition={{ delay: 0.3 }}
             className="bg-slate-900 border border-slate-800 rounded-2xl p-6"
           >
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-bold text-slate-50 mb-4 flex items-center gap-2">
               <Star size={20} className="text-slate-400" />
               Development History
             </h2>
@@ -833,7 +880,7 @@ export function PlayerProfile() {
                         </div>
                       )}
                     </div>
-                    <p className="text-white whitespace-pre-wrap">{note.note}</p>
+                    <p className="text-slate-50 whitespace-pre-wrap">{note.note}</p>
                   </div>
                 ))}
               </div>
