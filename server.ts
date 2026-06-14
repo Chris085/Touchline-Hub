@@ -73,6 +73,7 @@ async function startServer() {
           if (userData?.teamId) {
             await db.collection("teams").doc(userData.teamId).update({
               subscriptionStatus: "active",
+              organisationId: userData.organisationId || 'default-org'
             });
           }
 
@@ -112,6 +113,7 @@ async function startServer() {
             if (userData?.teamId) {
               await db.collection("teams").doc(userData.teamId).update({
                 subscriptionStatus: status,
+                organisationId: userData.organisationId || 'default-org'
               });
             }
             console.log(`Subscription ${status} for user: ${userId}`);
@@ -421,7 +423,10 @@ async function startServer() {
 
       // Update team subscription status as well
       if (userData?.teamId) {
-        await db.collection("teams").doc(userData.teamId).update(updates);
+        await db.collection("teams").doc(userData.teamId).update({
+          ...updates,
+          organisationId: userData.organisationId || 'default-org'
+        });
       }
 
       res.json({ success: true });
