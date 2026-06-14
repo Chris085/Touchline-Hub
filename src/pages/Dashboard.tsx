@@ -139,7 +139,7 @@ export function Dashboard() {
 
     // Fetch matches
     const matchesRef = collection(db, 'matches');
-    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId));
+    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId));
     
     const unsubMatches = onSnapshot(qMatches, (snapshot) => {
       const matchesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Match));
@@ -155,8 +155,8 @@ export function Dashboard() {
     // Fetch players for this parent or all players for coach
     const playersRef = collection(db, 'players');
     const qPlayers = isCoach 
-      ? query(playersRef, where('teamId', '==', profile.teamId))
-      : query(playersRef, where('parentIds', 'array-contains', profile.uid));
+      ? query(playersRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId))
+      : query(playersRef, where('parentIds', 'array-contains', profile.uid), where('organisationId', '==', profile.organisationId));
 
     const unsubPlayers = onSnapshot(qPlayers, (snapshot) => {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -166,14 +166,14 @@ export function Dashboard() {
       unsubMatches();
       unsubPlayers();
     };
-  }, [profile?.teamId, profile?.role, profile?.uid]);
+  }, [profile?.teamId, profile?.role, profile?.uid, profile?.organisationId]);
 
   useEffect(() => {
     if (!profile?.teamId || matches.length === 0) return;
 
     // Fetch availabilities
     const availRef = collection(db, 'availabilities');
-    const qAvail = query(availRef, where('teamId', '==', profile.teamId));
+    const qAvail = query(availRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId));
 
     const unsubAvail = onSnapshot(qAvail, (snapshot) => {
       const availData: Record<string, Availability> = {};
@@ -200,6 +200,7 @@ export function Dashboard() {
             ...newMatch,
             date: currentDate.toISOString().slice(0, 16),
             teamId: profile.teamId,
+            organisationId: profile.organisationId,
             season: teamData?.seasonTag || null
           }));
           currentDate.setDate(currentDate.getDate() + repeatDays);
@@ -209,6 +210,7 @@ export function Dashboard() {
         await addDoc(collection(db, 'matches'), {
           ...newMatch,
           teamId: profile.teamId,
+          organisationId: profile.organisationId,
           season: teamData?.seasonTag || null
         });
       }

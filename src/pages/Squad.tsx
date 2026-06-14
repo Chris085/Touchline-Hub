@@ -75,7 +75,7 @@ export function Squad() {
 
     // Fetch players
     const playersRef = collection(db, 'players');
-    const q = query(playersRef, where('teamId', '==', profile.teamId));
+    const q = query(playersRef, where('organisationId', '==', profile.organisationId), where('teamId', '==', profile.teamId));
     
     const unsub = onSnapshot(q, (snapshot) => {
       const playersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player));

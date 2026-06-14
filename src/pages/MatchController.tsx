@@ -100,7 +100,7 @@ export function MatchController() {
     if (!profile?.teamId) return;
 
     const matchesRef = collection(db, 'matches');
-    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId), where('type', '==', 'match'));
+    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId), where('type', '==', 'match'));
     
     const unsubMatches = onSnapshot(qMatches, (snapshot) => {
       const matchesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
@@ -134,7 +134,7 @@ export function MatchController() {
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'matches'));
 
     const playersRef = collection(db, 'players');
-    const qPlayers = query(playersRef, where('teamId', '==', profile.teamId));
+    const qPlayers = query(playersRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId));
     
     const unsubPlayers = onSnapshot(qPlayers, (snapshot) => {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -144,7 +144,7 @@ export function MatchController() {
       unsubMatches();
       unsubPlayers();
     };
-  }, [profile?.teamId]);
+  }, [profile?.teamId, profile?.organisationId]);
 
   useEffect(() => {
     if (!activeMatch?.id || !profile?.uid) return;
@@ -153,7 +153,8 @@ export function MatchController() {
     const qVotes = query(
       votesRef, 
       where('matchId', '==', activeMatch.id),
-      where('teamId', '==', profile.teamId)
+      where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId)
     );
     
     const unsubVotes = onSnapshot(qVotes, (snapshot) => {
@@ -165,7 +166,7 @@ export function MatchController() {
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'motmVotes'));
     
     return () => unsubVotes();
-  }, [activeMatch?.id, profile?.uid]);
+  }, [activeMatch?.id, profile?.uid, profile?.organisationId]);
 
   useEffect(() => {
     if (!activeMatch?.id) return;
@@ -173,7 +174,8 @@ export function MatchController() {
     const qAvail = query(
       availRef, 
       where('matchId', '==', activeMatch.id),
-      where('teamId', '==', profile.teamId)
+      where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId)
     );
     const unsubAvail = onSnapshot(qAvail, (snapshot) => {
       const availData: Record<string, any> = {};
@@ -184,7 +186,7 @@ export function MatchController() {
       setAvailabilities(availData);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'availabilities'));
     return () => unsubAvail();
-  }, [activeMatch?.id]);
+  }, [activeMatch?.id, profile?.organisationId]);
 
   useEffect(() => {
     if (!activeMatch) return;

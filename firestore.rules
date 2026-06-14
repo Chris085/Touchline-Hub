@@ -26,9 +26,13 @@ service cloud.firestore {
       return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*"));
     }
     function isTeamMember(teamId) {
+      let user = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      let team = get(/databases/$(database)/documents/teams/$(teamId));
       return isAuthenticated() && 
              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId == teamId;
+             exists(/databases/$(database)/documents/teams/$(teamId)) &&
+             user.data.teamId == teamId &&
+             team.data.organisationId == user.data.organisationId;
     }
 
     function isCoach(teamId) {

@@ -79,7 +79,7 @@ export function Stats() {
     });
 
     const unsubMatches = onSnapshot(
-      query(collection(db, 'matches'), where('teamId', '==', profile.teamId), orderBy('date', 'asc')),
+      query(collection(db, 'matches'), where('organisationId', '==', profile.organisationId), where('teamId', '==', profile.teamId), orderBy('date', 'asc')),
       (snapshot) => {
         setMatches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         setLoading(false);
@@ -88,31 +88,31 @@ export function Stats() {
     );
 
     const unsubPlayers = onSnapshot(
-      query(collection(db, 'players'), where('teamId', '==', profile.teamId)),
+      query(collection(db, 'players'), where('organisationId', '==', profile.organisationId), where('teamId', '==', profile.teamId)),
       (snapshot) => setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'players')
     );
 
     const unsubVotes = onSnapshot(
-      query(collection(db, 'motmVotes'), where('teamId', '==', profile.teamId)),
+      query(collection(db, 'motmVotes'), where('organisationId', '==', profile.organisationId), where('teamId', '==', profile.teamId)),
       (snapshot) => setVotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'motmVotes')
     );
 
     const unsubAttendances = onSnapshot(
-      query(collection(db, 'attendances'), where('teamId', '==', profile.teamId)),
+      query(collection(db, 'attendances'), where('organisationId', '==', profile.organisationId), where('teamId', '==', profile.teamId)),
       (snapshot) => setAttendances(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'attendances')
     );
 
     const unsubAvailabilities = onSnapshot(
-      query(collection(db, 'availabilities'), where('teamId', '==', profile.teamId)),
+      query(collection(db, 'availabilities'), where('organisationId', '==', profile.organisationId), where('teamId', '==', profile.teamId)),
       (snapshot) => setAvailabilities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'availabilities')
     );
 
     const unsubSummaries = onSnapshot(
-      query(collection(db, 'seasonSummaries'), where('teamId', '==', profile.teamId), orderBy('createdAt', 'desc')),
+      query(collection(db, 'seasonSummaries'), where('organisationId', '==', profile.organisationId), where('teamId', '==', profile.teamId), orderBy('createdAt', 'desc')),
       (snapshot) => setSeasonSummaries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))),
       (error) => handleFirestoreError(error, OperationType.LIST, 'seasonSummaries')
     );
