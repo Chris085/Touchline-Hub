@@ -17,6 +17,7 @@ export function Admin() {
   const [populating, setPopulating] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [migratingTeams, setMigratingTeams] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [codeType, setCodeType] = useState<'full' | 'trial'>('trial');
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
@@ -69,6 +70,34 @@ export function Admin() {
       alert(error.message);
     } finally {
       setPopulating(false);
+    }
+  };
+
+  const migrateLegacyTeams = async () => {
+    setMigratingTeams(true);
+    try {
+      const snapshot = await getDocs(collection(db, 'teams'));
+      const batch = writeBatch(db);
+      let count = 0;
+      
+      snapshot.forEach(doc => {
+        if (!doc.data().organisationId) {
+          batch.update(doc.ref, { organisationId: 'default-org' });
+          count++;
+        }
+      });
+      
+      if (count > 0) {
+        await batch.commit();
+        alert(`Migrated ${count} teams!`);
+      } else {
+        alert('No teams to migrate.');
+      }
+    } catch (error) {
+      console.error('Error migrating teams:', error);
+      alert('Failed to migrate teams');
+    } finally {
+      setMigratingTeams(false);
     }
   };
 
@@ -199,6 +228,14 @@ export function Admin() {
         >
           {populating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
           Populate Dummy Data
+        </button>
+        <button
+          onClick={migrateLegacyTeams}
+          disabled={migratingTeams}
+          className="bg-blue-500/10 border border-blue-500/20 text-blue-500 hover:bg-blue-500/20 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
+        >
+          {migratingTeams ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
+          Migrate Legacy Teams
         </button>
       </div>
 

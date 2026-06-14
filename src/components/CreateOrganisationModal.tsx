@@ -36,9 +36,11 @@ export function CreateOrganisationModal({ isOpen, onClose, onCreated }: Props) {
       await updateDoc(userRef, { organisationId: orgRef.id });
 
       // If user has a team, link organisation to team
+      console.log('Linking org to team:', profile.teamId);
       if (profile.teamId) {
         const teamRef = doc(db, 'teams', profile.teamId);
         await updateDoc(teamRef, { organisationId: orgRef.id });
+        console.log('Team updated with organisationId:', orgRef.id);
       }
 
       alert('Organisation created successfully!');
