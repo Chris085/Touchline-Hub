@@ -59,6 +59,10 @@ service cloud.firestore {
               request.auth.token.email == "chrisjeal9@gmail.com");
     }
 
+    function getUserOrganisationId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organisationId;
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================

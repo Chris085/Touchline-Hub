@@ -140,6 +140,7 @@ export function Squad() {
         name: newPlayerName.trim(),
         position: newPlayerPosition,
         teamId: profile.teamId,
+        organisationId: profile.organisationId || 'default-org',
         parentIds: [],
         inviteCode: generateInviteCode(),
         motmAwards: 0

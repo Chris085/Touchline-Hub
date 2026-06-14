@@ -116,7 +116,7 @@ export function Onboarding() {
         await updateProfile({ 
           role: 'coach', 
           teamId: teamDoc.id, 
-          organisationId: teamData.organisationId,
+          organisationId: teamData.organisationId || 'default-org',
           joinedTeams: [{ teamId: teamDoc.id, role: 'coach', teamName: teamData.name }],
           ...subscriptionUpdates 
         });
@@ -257,6 +257,7 @@ export function Onboarding() {
         await updateProfile({ 
           role: 'parent', 
           teamId: teamDoc.id,
+          organisationId: teamData.organisationId || 'default-org',
           joinedTeams: [{ teamId: teamDoc.id, role: 'parent', teamName: teamData.name }]
         });
       }

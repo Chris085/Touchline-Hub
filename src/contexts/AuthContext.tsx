@@ -97,7 +97,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               
               const teamRef = doc(db, 'teams', userData.teamId);
               unsubscribeTeam = onSnapshot(teamRef, (teamSnap) => {
-                let mergedProfile = { ...userData };
+                let mergedProfile = { 
+                  ...userData, 
+                  organisationId: userData.organisationId || 'default-org' 
+                };
                 
                 if (teamSnap.exists()) {
                   const teamData = teamSnap.data();
@@ -131,12 +134,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setLoading(false);
               }, (err) => {
                 console.error("Error listening to team:", err);
-                setProfile(userData);
+                setProfile({
+                  ...userData,
+                  organisationId: userData.organisationId || 'default-org'
+                });
                 setLoading(false);
               });
             } else {
               // No team, just use user data
-              let finalProfile = { ...userData };
+              let finalProfile = { 
+                ...userData,
+                organisationId: userData.organisationId || 'default-org'
+              };
               if (finalProfile.email === 'chrisjeal9@gmail.com') {
                 finalProfile.subscriptionStatus = 'active';
               }
@@ -152,6 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               photoURL: currentUser.photoURL || '',
               role: null,
               subscriptionStatus: currentUser.email === 'chrisjeal9@gmail.com' ? 'active' : 'inactive',
+              organisationId: 'default-org',
             };
             try {
               await setDoc(userRef, newProfile);
