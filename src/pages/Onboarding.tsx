@@ -130,7 +130,7 @@ export function Onboarding() {
         // Create Organisation
         const orgRef = doc(db, 'organisations', organisationId);
         await setDoc(orgRef, {
-            name: orgType === 'club' ? teamName : teamName,
+            name: teamName,
             type: orgType,
             createdBy: user?.uid,
             createdAt: new Date().toISOString(),

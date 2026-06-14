@@ -21,9 +21,14 @@ export interface AnalyticsResult {
   summary: SimplifiedFormationMetric[];
 }
 
-export const getFormationAnalytics = async (seasonId: string, teamId: string): Promise<AnalyticsResult> => {
+export const getFormationAnalytics = async (seasonId: string, teamId: string, organisationId: string): Promise<AnalyticsResult> => {
   const matchesRef = collection(db, "matches");
-  const qMatches = query(matchesRef, where("seasonId", "==", seasonId), where("teamId", "==", teamId));
+  const qMatches = query(
+    matchesRef, 
+    where("seasonId", "==", seasonId), 
+    where("teamId", "==", teamId),
+    where("organisationId", "==", organisationId)
+  );
   
   let matchesSnapshot;
   try {

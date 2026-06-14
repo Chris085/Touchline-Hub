@@ -795,6 +795,7 @@ export function Stats() {
         onClose={() => setShowAnalyticsModal(false)}
         seasonId={seasonId}
         teamId={profile?.teamId || ''}
+        organisationId={profile?.organisationId || ''}
         matches={filteredMatches}
         players={players}
         stats={stats}

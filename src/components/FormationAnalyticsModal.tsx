@@ -12,12 +12,13 @@ interface FormationAnalyticsModalProps {
   onClose: () => void;
   seasonId: string;
   teamId: string;
+  organisationId: string;
   matches: any[];
   players: any[];
   stats: any;
 }
 
-export function FormationAnalyticsModal({ isOpen, onClose, seasonId, teamId, matches, players, stats }: FormationAnalyticsModalProps) {
+export function FormationAnalyticsModal({ isOpen, onClose, seasonId, teamId, organisationId, matches, players, stats }: FormationAnalyticsModalProps) {
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export function FormationAnalyticsModal({ isOpen, onClose, seasonId, teamId, mat
     setError(null);
     setIsSaved(false);
     try {
-      const analyticsData = await getFormationAnalytics(seasonId, teamId);
+      const analyticsData = await getFormationAnalytics(seasonId, teamId, organisationId);
 
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
