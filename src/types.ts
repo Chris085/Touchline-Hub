@@ -9,6 +9,13 @@ export interface Organisation {
   subscriptionTier: 'free_team' | 'pro_team' | 'club';
   createdBy: string;
   createdAt: string;
+  invitationCode?: string;
+  settings?: {
+    subTeamsEnabled?: boolean;
+    defaultMatchDuration?: number;
+  };
+  ownerUserId: string;
+  transferOwnershipCode?: string;
 }
 
 export interface Team {

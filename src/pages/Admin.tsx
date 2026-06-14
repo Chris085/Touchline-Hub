@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, getDocs, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, addDoc, deleteDoc, doc, orderBy, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { motion } from 'motion/react';
 import { Plus, Trash2, Copy, Check, Loader2, Key, Database, Eraser } from 'lucide-react';
 import { seedData, removeAllSeedData } from '../services/seedService';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { OrganisationSettings } from '../components/OrganisationSettings';
 
 export function Admin() {
   const { profile } = useAuth();
   const [codes, setCodes] = useState<any[]>([]);
+  const [orgData, setOrgData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [populating, setPopulating] = useState(false);
@@ -72,7 +74,18 @@ export function Admin() {
 
   useEffect(() => {
     fetchCodes();
-  }, []);
+    
+    const fetchOrg = async () => {
+      if (!profile?.organisationId) return;
+      
+      const orgRef = doc(db, 'organisations', profile.organisationId);
+      const orgSnap = await getDoc(orgRef);
+      if (orgSnap.exists()) {
+        setOrgData({ ...orgSnap.data(), id: orgSnap.id });
+      }
+    };
+    fetchOrg();
+  }, [profile?.organisationId]);
 
   const fetchCodes = async () => {
     setLoading(true);
@@ -188,6 +201,12 @@ export function Admin() {
           Populate Dummy Data
         </button>
       </div>
+
+      {orgData && (
+          <div className="mb-8">
+            <OrganisationSettings orgData={orgData} onUpdate={() => {}} />
+          </div>
+      )}
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex items-center gap-2 text-slate-300 font-medium">

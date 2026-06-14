@@ -254,6 +254,10 @@ service cloud.firestore {
       allow write: if isOwner(userId) && isValidUser(request.resource.data);
     }
 
+    match /organisations/{orgId} {
+      allow read, create, update, delete: if true;
+    }
+
     match /teams/{teamId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidTeam(request.resource.data);
