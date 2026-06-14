@@ -26,13 +26,9 @@ service cloud.firestore {
       return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*"));
     }
     function isTeamMember(teamId) {
-      let user = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      let team = get(/databases/$(database)/documents/teams/$(teamId));
       return isAuthenticated() && 
              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             exists(/databases/$(database)/documents/teams/$(teamId)) &&
-             user.data.teamId == teamId &&
-             team.data.organisationId == user.data.organisationId;
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId == teamId;
     }
 
     function isCoach(teamId) {
@@ -61,14 +57,6 @@ service cloud.firestore {
       return isAuthenticated() && 
              (request.auth.uid == "V45Buf6eA5ggg2JUFShJpj48y2y2" || 
               request.auth.token.email == "chrisjeal9@gmail.com");
-    }
-
-    function getUserOrganisationId() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organisationId;
-    }
-
-    function isOrganisationMember(organisationId) {
-      return isAuthenticated() && getUserOrganisationId() == organisationId;
     }
 
     // ===============================================================
@@ -266,14 +254,10 @@ service cloud.firestore {
       allow write: if isOwner(userId) && isValidUser(request.resource.data);
     }
 
-    match /organisations/{orgId} {
-      allow read, create, update, delete: if true;
-    }
-
     match /teams/{teamId} {
-      allow read: if isOrganisationMember(resource.data.organisationId);
-      allow create: if isAuthenticated() && isValidTeam(request.resource.data) && isOrganisationMember(request.resource.data.organisationId);
-      allow update: if isCoach(teamId) && isValidTeam(request.resource.data) && isOrganisationMember(request.resource.data.organisationId);
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidTeam(request.resource.data);
+      allow update: if isCoach(teamId) && isValidTeam(request.resource.data);
     }
 
     match /players/{playerId} {

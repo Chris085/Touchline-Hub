@@ -61,7 +61,6 @@ export function Notes() {
     const q = query(
       notesRef, 
       where('teamId', '==', profile.teamId),
-      where('organisationId', '==', profile.organisationId || 'default-org'),
       orderBy('createdAt', 'desc')
     );
 
@@ -100,7 +99,6 @@ export function Notes() {
     try {
       await addDoc(collection(db, 'notes'), {
         teamId: profile.teamId,
-        organisationId: profile.organisationId || 'default-org',
         authorId: profile.uid,
         content: newNote.content.trim(),
         type: newNote.type,

@@ -102,13 +102,13 @@ export function Payments() {
     });
 
     // Fetch Players
-    const qPlayers = query(collection(db, 'players'), where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId || 'default-org'));
+    const qPlayers = query(collection(db, 'players'), where('teamId', '==', profile.teamId));
     const unsubPlayers = onSnapshot(qPlayers, (snapshot) => {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Player)));
     });
 
     // Fetch Player Payments (Balances)
-    const qBalances = query(collection(db, 'playerPayments'), where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId || 'default-org'));
+    const qBalances = query(collection(db, 'playerPayments'), where('teamId', '==', profile.teamId));
     const unsubBalances = onSnapshot(qBalances, (snapshot) => {
       const balances: Record<string, PlayerPayment> = {};
       snapshot.docs.forEach(doc => {
@@ -122,7 +122,6 @@ export function Payments() {
     const qTransactions = query(
       collection(db, 'paymentTransactions'), 
       where('teamId', '==', profile.teamId),
-      where('organisationId', '==', profile.organisationId || 'default-org'),
       orderBy('date', 'desc'),
       limit(50)
     );
@@ -131,7 +130,7 @@ export function Payments() {
     });
 
     // Fetch Monthly Subs
-    const qSubs = query(collection(db, 'monthlySubs'), where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId || 'default-org'));
+    const qSubs = query(collection(db, 'monthlySubs'), where('teamId', '==', profile.teamId));
     const unsubSubs = onSnapshot(qSubs, (snapshot) => {
       const subs: Record<string, Record<string, MonthlySub>> = {};
       snapshot.docs.forEach(doc => {
@@ -185,7 +184,6 @@ export function Payments() {
       await addDoc(collection(db, 'paymentTransactions'), {
         playerId,
         teamId: profile.teamId,
-        organisationId: profile.organisationId || 'default-org',
         amount,
         date: new Date().toISOString(),
         type: paymentType,
@@ -204,7 +202,6 @@ export function Payments() {
           await setDoc(doc(db, 'playerPayments', `${profile.teamId}_${playerId}`), {
             playerId,
             teamId: profile.teamId,
-            organisationId: profile.organisationId || 'default-org',
             totalPaid: amount,
             matchesPlayed: 0,
             lastPaymentDate: new Date().toISOString()
@@ -230,7 +227,6 @@ export function Payments() {
       await setDoc(doc(db, 'monthlySubs', subId), {
         playerId,
         teamId: profile.teamId,
-        organisationId: profile.organisationId || 'default-org',
         month,
         status: nextStatus,
         paidAt: nextStatus === 'paid' ? new Date().toISOString() : null
@@ -254,7 +250,6 @@ export function Payments() {
         await setDoc(doc(db, 'playerPayments', `${profile.teamId}_${playerId}`), {
           playerId,
           teamId: profile.teamId,
-          organisationId: profile.organisationId || 'default-org',
           totalPaid: 0,
           matchesPlayed: Math.max(0, delta)
         });
@@ -278,7 +273,6 @@ export function Payments() {
           await setDoc(doc(db, 'playerPayments', `${profile.teamId}_${player.id}`), {
             playerId: player.id,
             teamId: profile.teamId,
-            organisationId: profile.organisationId || 'default-org',
             totalPaid: 0,
             matchesPlayed: Math.max(0, delta)
           });

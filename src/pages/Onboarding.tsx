@@ -12,7 +12,6 @@ export function Onboarding() {
   const { user, updateProfile, signOut, deleteProfile } = useAuth();
   const [searchParams] = useSearchParams();
   const [role, setRole] = useState<'coach' | 'parent' | null>(null);
-  const [orgType, setOrgType] = useState<'team' | 'club' | null>(null);
   const [teamName, setTeamName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
@@ -20,7 +19,7 @@ export function Onboarding() {
   const [showCodeInput, setShowCodeInput] = useState(false);
   const [coachCode, setCoachCode] = useState('');
   const [startTrial, setStartTrial] = useState(true);
-  const [createdTeam, setCreatedTeam] = useState<{ id: string, code: string, organisationId: string } | null>(null);
+  const [createdTeam, setCreatedTeam] = useState<{ id: string, code: string } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -116,32 +115,18 @@ export function Onboarding() {
         await updateProfile({ 
           role: 'coach', 
           teamId: teamDoc.id, 
-          organisationId: teamData.organisationId || 'default-org',
           joinedTeams: [{ teamId: teamDoc.id, role: 'coach', teamName: teamData.name }],
           ...subscriptionUpdates 
         });
       } else {
-        // Creating a new team or club
+        // Creating a new team
         // Generate a random 6-digit code
         const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const organisationId = `org_${Date.now()}`;
         const teamId = `team_${Date.now()}`;
         
-        // Create Organisation
-        const orgRef = doc(db, 'organisations', organisationId);
-        await setDoc(orgRef, {
-            name: teamName,
-            type: orgType,
-            createdBy: user?.uid,
-            createdAt: new Date().toISOString(),
-            subscriptionTier: 'free_team'
-        });
-
-        // Create Team
         const teamRef = doc(db, 'teams', teamId);
         await setDoc(teamRef, {
           name: teamName,
-          organisationId: organisationId,
           code,
           coachId: user?.uid,
           matchDuration: 45,
@@ -153,9 +138,8 @@ export function Onboarding() {
         await updateProfile({ ...subscriptionUpdates });
 
         // Show success screen instead of immediately redirecting
-        setCreatedTeam({ id: teamId, code, organisationId });
+        setCreatedTeam({ id: teamId, code });
       }
-
     } catch (err: any) {
       try {
         handleFirestoreError(err, OperationType.CREATE, 'teams');
@@ -179,7 +163,6 @@ export function Onboarding() {
       await updateProfile({ 
         role: 'coach', 
         teamId: createdTeam.id,
-        organisationId: createdTeam.organisationId,
         joinedTeams: [{ teamId: createdTeam.id, role: 'coach', teamName: teamName }]
       });
     } catch (err: any) {
@@ -257,7 +240,6 @@ export function Onboarding() {
         await updateProfile({ 
           role: 'parent', 
           teamId: teamDoc.id,
-          organisationId: teamData.organisationId || 'default-org',
           joinedTeams: [{ teamId: teamDoc.id, role: 'parent', teamName: teamData.name }]
         });
       }
@@ -403,32 +385,6 @@ export function Onboarding() {
               </div>
             </button>
           </div>
-        ) : role === 'coach' && !orgType ? (
-          <div className="space-y-4">
-            <h2 className="text-xl font-display italic uppercase font-black text-chalk-white mb-6 text-center">How will you use Touchline Hub?</h2>
-            <button
-              onClick={() => setOrgType('team')}
-              className="w-full bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white p-5 rounded-2xl border border-chalk-white/5 transition-all flex items-center justify-between group"
-            >
-              <div className="text-left">
-                <div className="text-lg font-display italic uppercase font-black">I manage a single team</div>
-              </div>
-            </button>
-            <button
-              onClick={() => setOrgType('club')}
-              className="w-full bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white p-5 rounded-2xl border border-chalk-white/5 transition-all flex items-center justify-between group"
-            >
-              <div className="text-left">
-                <div className="text-lg font-display italic uppercase font-black">I manage a club with multiple teams</div>
-              </div>
-            </button>
-            <button
-                onClick={() => { setRole(null); }}
-                className="w-full bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white/60 py-4 rounded-xl font-display italic uppercase font-black transition-all border border-chalk-white/5"
-            >
-                Back
-            </button>
-          </div>
         ) : role === 'coach' ? (
           <form onSubmit={handleCoachSetup} className="space-y-6">
             <div className="space-y-5">
@@ -451,13 +407,13 @@ export function Onboarding() {
 
               {!inviteCode ? (
                 <div>
-                  <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">{orgType === 'club' ? 'Club Name' : 'Team Name'}</label>
+                  <label className="block text-[10px] font-bold text-chalk-white/50 uppercase tracking-widest mb-1.5 ml-1">Team Name</label>
                   <input
                     type="text"
                     value={teamName}
                     onChange={(e) => setTeamName(e.target.value)}
                     className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white focus:outline-none focus:border-pitch-green focus:ring-1 focus:ring-pitch-green transition-all placeholder:text-chalk-white/20"
-                    placeholder={orgType === 'club' ? "e.g. Glossop Rangers FC" : "e.g. Astley & Buckshaw U10s"}
+                    placeholder="e.g. Astley & Buckshaw U10s"
                     required
                   />
                 </div>
@@ -527,7 +483,7 @@ export function Onboarding() {
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => { setRole(null); setOrgType(null); setError(''); setInviteCode(''); setTeamName(''); }}
+                onClick={() => { setRole(null); setError(''); setInviteCode(''); setTeamName(''); }}
                 className="flex-1 bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white/60 py-4 rounded-xl font-display italic uppercase font-black transition-all border border-chalk-white/5"
               >
                 Back

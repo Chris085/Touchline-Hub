@@ -1,23 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, getDocs, addDoc, deleteDoc, doc, orderBy, getDoc } from 'firebase/firestore';
+import { collection, query, getDocs, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { motion } from 'motion/react';
 import { Plus, Trash2, Copy, Check, Loader2, Key, Database, Eraser } from 'lucide-react';
 import { seedData, removeAllSeedData } from '../services/seedService';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { OrganisationSettings } from '../components/OrganisationSettings';
 
 export function Admin() {
   const { profile } = useAuth();
   const [codes, setCodes] = useState<any[]>([]);
-  const [orgData, setOrgData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [populating, setPopulating] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [migratingTeams, setMigratingTeams] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [codeType, setCodeType] = useState<'full' | 'trial'>('trial');
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
@@ -73,48 +70,9 @@ export function Admin() {
     }
   };
 
-  const migrateLegacyTeams = async () => {
-    setMigratingTeams(true);
-    try {
-      const snapshot = await getDocs(collection(db, 'teams'));
-      const batch = writeBatch(db);
-      let count = 0;
-      
-      snapshot.forEach(doc => {
-        if (!doc.data().organisationId) {
-          batch.update(doc.ref, { organisationId: 'default-org' });
-          count++;
-        }
-      });
-      
-      if (count > 0) {
-        await batch.commit();
-        alert(`Migrated ${count} teams!`);
-      } else {
-        alert('No teams to migrate.');
-      }
-    } catch (error) {
-      console.error('Error migrating teams:', error);
-      alert('Failed to migrate teams');
-    } finally {
-      setMigratingTeams(false);
-    }
-  };
-
   useEffect(() => {
     fetchCodes();
-    
-    const fetchOrg = async () => {
-      if (!profile?.organisationId) return;
-      
-      const orgRef = doc(db, 'organisations', profile.organisationId);
-      const orgSnap = await getDoc(orgRef);
-      if (orgSnap.exists()) {
-        setOrgData({ ...orgSnap.data(), id: orgSnap.id });
-      }
-    };
-    fetchOrg();
-  }, [profile?.organisationId]);
+  }, []);
 
   const fetchCodes = async () => {
     setLoading(true);
@@ -229,21 +187,7 @@ export function Admin() {
           {populating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
           Populate Dummy Data
         </button>
-        <button
-          onClick={migrateLegacyTeams}
-          disabled={migratingTeams}
-          className="bg-blue-500/10 border border-blue-500/20 text-blue-500 hover:bg-blue-500/20 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
-        >
-          {migratingTeams ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
-          Migrate Legacy Teams
-        </button>
       </div>
-
-      {orgData && (
-          <div className="mb-8">
-            <OrganisationSettings orgData={orgData} onUpdate={() => {}} />
-          </div>
-      )}
 
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex items-center gap-2 text-slate-300 font-medium">

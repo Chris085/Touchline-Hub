@@ -21,7 +21,6 @@ export interface UserProfile {
   photoURL: string;
   role: Role;
   teamId?: string;
-  organisationId?: string;
   joinedTeams?: { teamId: string; role: Role; teamName: string }[];
   subscriptionStatus?: 'active' | 'inactive';
   trialEndDate?: string;
@@ -97,10 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               
               const teamRef = doc(db, 'teams', userData.teamId);
               unsubscribeTeam = onSnapshot(teamRef, (teamSnap) => {
-                let mergedProfile = { 
-                  ...userData, 
-                  organisationId: userData.organisationId || 'default-org' 
-                };
+                let mergedProfile = { ...userData };
                 
                 if (teamSnap.exists()) {
                   const teamData = teamSnap.data();
@@ -134,18 +130,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setLoading(false);
               }, (err) => {
                 console.error("Error listening to team:", err);
-                setProfile({
-                  ...userData,
-                  organisationId: userData.organisationId || 'default-org'
-                });
+                setProfile(userData);
                 setLoading(false);
               });
             } else {
               // No team, just use user data
-              let finalProfile = { 
-                ...userData,
-                organisationId: userData.organisationId || 'default-org'
-              };
+              let finalProfile = { ...userData };
               if (finalProfile.email === 'chrisjeal9@gmail.com') {
                 finalProfile.subscriptionStatus = 'active';
               }
@@ -161,7 +151,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               photoURL: currentUser.photoURL || '',
               role: null,
               subscriptionStatus: currentUser.email === 'chrisjeal9@gmail.com' ? 'active' : 'inactive',
-              organisationId: 'default-org',
             };
             try {
               await setDoc(userRef, newProfile);

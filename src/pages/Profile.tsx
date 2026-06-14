@@ -22,8 +22,6 @@ import { db } from '../firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { ConfirmModal } from '../components/ConfirmModal';
-import { OrganisationSettings } from '../components/OrganisationSettings';
-import { CreateOrganisationModal } from '../components/CreateOrganisationModal';
 
 interface TeamMember {
   uid: string;
@@ -49,15 +47,12 @@ export function Profile() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'activity' | 'season' | 'teams' | 'settings' | 'notifications' | 'org'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'activity' | 'season' | 'teams' | 'settings' | 'notifications'>('overview');
   const [teamData, setTeamData] = useState<any>(null);
-  const [orgData, setOrgData] = useState<any>(null);
-  const [isOrgLoading, setIsOrgLoading] = useState(true);
   const [joinCode, setJoinCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
   const [showNewSeasonModal, setShowNewSeasonModal] = useState(false);
-  const [showCreateOrgModal, setShowCreateOrgModal] = useState(false);
   const [newSeasonName, setNewSeasonName] = useState('');
   const [seasonSettings, setSeasonSettings] = useState({
     name: '',
@@ -124,40 +119,11 @@ export function Profile() {
       }
     };
     fetchTeam();
-    
-    const fetchOrg = async () => {
-      setIsOrgLoading(true);
-      let orgId = profile?.organisationId;
-      if (!orgId && profile?.teamId) {
-        const teamRef = doc(db, 'teams', profile.teamId);
-        const teamSnap = await getDoc(teamRef);
-        if (teamSnap.exists()) {
-          orgId = teamSnap.data().organisationId;
-        }
-      }
-
-      if (!orgId) {
-        setOrgData(null);
-        setIsOrgLoading(false);
-        return;
-      }
-      
-      const orgRef = doc(db, 'organisations', orgId);
-      const orgSnap = await getDoc(orgRef);
-      if (orgSnap.exists()) {
-        setOrgData({ ...orgSnap.data(), id: orgSnap.id });
-      } else {
-        setOrgData(null);
-      }
-      setIsOrgLoading(false);
-    };
-    fetchOrg();
 
     // Fetch team members
     const membersQuery = query(
       collection(db, 'users'),
-      where('teamId', '==', profile.teamId),
-      where('organisationId', '==', profile.organisationId)
+      where('teamId', '==', profile.teamId)
     );
 
     const unsubscribeMembers = onSnapshot(membersQuery, (snapshot) => {
@@ -173,7 +139,6 @@ export function Profile() {
     const matchesQuery = query(
       collection(db, 'matches'),
       where('teamId', '==', profile.teamId),
-      where('organisationId', '==', profile.organisationId),
       orderBy('date', 'desc'),
       limit(1)
     );
@@ -202,7 +167,7 @@ export function Profile() {
       unsubscribeMembers();
       unsubscribeMatches();
     };
-  }, [profile?.teamId, profile?.organisationId]);
+  }, [profile?.teamId]);
 
   const handleManageSubscription = async () => {
     try {
@@ -556,15 +521,6 @@ export function Profile() {
         >
           <Bell size={16} />
           <span className="hidden sm:inline">Alerts</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('org')}
-          className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
-            activeTab === 'org' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
-          }`}
-        >
-          <Shield size={16} />
-          <span className="hidden sm:inline">Org</span>
         </button>
       </div>
 
@@ -1113,43 +1069,6 @@ export function Profile() {
                     </label>
                   ))}
                 </div>
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'org' && (
-            <motion.div
-              key="org"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-6"
-            >
-              <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
-                <h3 className="text-lg font-bold text-slate-50 mb-6">Organisation Settings</h3>
-                {isOrgLoading ? (
-                  <p className="text-slate-500">Loading organisation data...</p>
-                ) : orgData ? (
-                  <OrganisationSettings 
-                    orgData={orgData} 
-                    onUpdate={() => {}} 
-                  />
-                ) : (
-                  <div className="text-center py-6">
-                    <p className="text-slate-500 mb-4">No organisation found.</p>
-                    <button
-                        onClick={() => setShowCreateOrgModal(true)}
-                        className="px-6 py-3 bg-green-500 text-slate-950 font-bold rounded-xl"
-                    >
-                        Create Organisation
-                    </button>
-                    <CreateOrganisationModal 
-                        isOpen={showCreateOrgModal}
-                        onClose={() => setShowCreateOrgModal(false)}
-                        onCreated={(org) => setOrgData(org)}
-                    />
-                  </div>
-                )}
               </div>
             </motion.div>
           )}
