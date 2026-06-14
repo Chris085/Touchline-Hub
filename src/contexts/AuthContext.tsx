@@ -27,6 +27,12 @@ export interface UserProfile {
   stripeCustomerId?: string;
   fcmToken?: string;
   dashboardShortcuts?: string[];
+  notificationPreferences?: {
+    matchScheduled: boolean;
+    matchUpdate: boolean;
+    attendanceReminder: boolean;
+    trainingReminder: boolean;
+  };
 }
 
 interface AuthContextType {

@@ -287,6 +287,14 @@ async function startServer() {
         const unconfirmedPlayers = players.filter((p: any) => !confirmedPlayerIds.includes(p.id));
         
         if (unconfirmedPlayers.length > 0) {
+          // Check team-level settings
+          const teamDoc = await db.collection("teams").doc(teamId).get();
+          const teamData = teamDoc.data();
+          if (teamData?.notificationSettings && teamData.notificationSettings.attendanceReminder === false) {
+             console.log(`[Notification] Sending disabled for team ${teamId} and type attendanceReminder`);
+             continue;
+          }
+
           // Find parents of unconfirmed players
           for (const player of unconfirmedPlayers) {
             const parentsSnapshot = await db.collection("users")
@@ -294,7 +302,16 @@ async function startServer() {
               .where("linkedPlayerIds", "array-contains", player.id)
               .get();
               
-            const parentTokens = parentsSnapshot.docs.map((doc: any) => doc.data().fcmToken).filter((t: any) => !!t);
+            const parentTokens: string[] = [];
+            for (const doc of parentsSnapshot.docs) {
+                const parentData = doc.data();
+                if (parentData.fcmToken) {
+                    const prefs = parentData.notificationPreferences;
+                    if (!prefs || prefs.attendanceReminder !== false) {
+                        parentTokens.push(parentData.fcmToken);
+                    }
+                }
+            }
             
             if (parentTokens.length > 0) {
               await sendNotification(
@@ -311,6 +328,55 @@ async function startServer() {
       console.error("[Background] Error in unconfirmed entries check:", error);
     }
   }, 1000 * 60 * 60); // Every hour
+
+  // Notifications Trigger
+  const setupNotificationListeners = () => {
+    if (!db) return;
+
+    db.collection("matches").onSnapshot((snapshot: any) => {
+      snapshot.docChanges().forEach((change: any) => {
+        if (change.type === "added") {
+          const match = change.doc.data();
+          sendTeamNotification(match.teamId, "New Match Scheduled", `New match confirmed: ${match.opponent || 'TBC'}`, 'matchScheduled');
+        }
+        if (change.type === "modified") {
+          const match = change.doc.data();
+          sendTeamNotification(match.teamId, "Schedule Update", `Match schedule update: ${match.opponent || 'TBC'}`, 'matchUpdate');
+        }
+      });
+    });
+  };
+
+  const sendTeamNotification = async (teamId: string, title: string, body: string, type: string) => {
+     // 1. Get team settings
+     const teamDoc = await db.collection("teams").doc(teamId).get();
+     const teamData = teamDoc.data();
+     if (teamData?.notificationSettings && teamData.notificationSettings[type] === false) {
+       console.log(`[Notification] Sending disabled for team ${teamId} and type ${type}`);
+       return;
+     }
+
+     const usersSnapshot = await db.collection("users").where("teamId", "==", teamId).get();
+     
+     // 2. Filter users based on preferences
+     const tokens: string[] = [];
+     for (const doc of usersSnapshot.docs) {
+        const userData = doc.data();
+        if (userData.fcmToken) {
+           const prefs = userData.notificationPreferences;
+           if (!prefs || prefs[type] !== false) {
+             tokens.push(userData.fcmToken);
+           }
+        }
+     }
+     
+     if (tokens.length > 0) {
+       await sendNotification(tokens, title, body);
+     }
+  };
+
+  setupNotificationListeners();
+
 
   // Validate Coach Code
   app.post("/api/validate-coach-code", async (req, res) => {

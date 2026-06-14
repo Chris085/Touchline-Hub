@@ -1057,15 +1057,46 @@ export function MatchController() {
         </div>
 
         {/* Live Pitch View */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
-          <LivePitchView 
-            initialPitchPlayers={pitchPlayersData} 
-            initialBenchPlayers={benchPlayersData}
-            onSubstitute={handlePitchSubstitution}
-            onMove={handlePitchMove}
-            isCoach={isCoach}
-          />
-        </div>
+        {team?.features?.dragAndDropPitch !== false ? (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <LivePitchView 
+              initialPitchPlayers={pitchPlayersData} 
+              initialBenchPlayers={benchPlayersData}
+              onSubstitute={handlePitchSubstitution}
+              onMove={handlePitchMove}
+              isCoach={isCoach}
+            />
+          </div>
+        ) : (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div>
+              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-3">On Pitch</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {pitchPlayersData.map(p => (
+                  <div key={p.id} className="bg-green-500/10 border border-green-500/20 text-green-400 p-3 rounded-xl font-bold text-sm truncate">
+                    {p.name}
+                  </div>
+                ))}
+                {pitchPlayersData.length === 0 && (
+                  <p className="text-slate-500 text-sm italic col-span-full">No players on pitch.</p>
+                )}
+              </div>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-3">Subs Bench</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {benchPlayersData.map(p => (
+                  <div key={p.id} className="bg-slate-800 border border-slate-700 text-slate-300 p-3 rounded-xl font-bold text-sm truncate">
+                    {p.name}
+                  </div>
+                ))}
+                {benchPlayersData.length === 0 && (
+                  <p className="text-slate-500 text-sm italic col-span-full">No players on bench.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Action Buttons */}
         {isCoach && (

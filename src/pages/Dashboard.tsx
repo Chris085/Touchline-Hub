@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { collection, query, where, onSnapshot, addDoc, doc, setDoc, deleteDoc, orderBy, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -48,6 +48,13 @@ export function Dashboard() {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [teamData, setTeamData] = useState<any>(null);
+  const [selectedSeason, setSelectedSeason] = useState<string>('all');
+
+  // Filter matches based on selected season
+  const filteredMatches = useMemo(() => {
+    if (selectedSeason === 'all') return matches;
+    return matches.filter(m => m.season === selectedSeason);
+  }, [matches, selectedSeason]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent | TouchEvent) => {
@@ -71,7 +78,9 @@ export function Dashboard() {
       const teamRef = doc(db, 'teams', profile.teamId);
       const teamSnap = await getDoc(teamRef);
       if (teamSnap.exists()) {
-        setTeamData(teamSnap.data());
+        const data = teamSnap.data();
+        setTeamData(data);
+        if (data.seasonTag && selectedSeason === 'all') setSelectedSeason(data.seasonTag);
       }
     };
     fetchTeam();
@@ -279,10 +288,10 @@ export function Dashboard() {
     }
   };
 
-  const filteredMatches = matches.filter(m => filter === 'all' || m.type === filter);
+  const displayMatches = filteredMatches.filter(m => filter === 'all' || m.type === filter);
 
   // Group matches by month
-  const groupedMatches = filteredMatches.reduce((groups, match) => {
+  const groupedMatches = displayMatches.reduce((groups, match) => {
     if (!match.date) {
       const key = 'Postponed / TBA';
       if (!groups[key]) groups[key] = [];
@@ -309,7 +318,7 @@ export function Dashboard() {
     setExpandedMonths(prev => ({ ...prev, [month]: !prev[month] }));
   };
 
-  const nextMatch = [...matches]
+  const nextMatch = [...filteredMatches]
     .filter(m => m.type === 'match' && m.status !== 'postponed' && m.status !== 'completed' && m.date && new Date(m.date) > new Date())
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
 
@@ -326,11 +335,27 @@ export function Dashboard() {
       </div>
 
       <div className="flex justify-between items-center relative z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-pitch-green/20 rounded-xl flex items-center justify-center border border-pitch-green/30 rotate-3">
-            <Trophy size={24} className="text-pitch-green" />
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-pitch-green/20 rounded-xl flex items-center justify-center border border-pitch-green/30 rotate-3">
+              <Trophy size={24} className="text-pitch-green" />
+            </div>
+            <h1 className="text-4xl font-black text-chalk-white uppercase tracking-tighter italic font-display leading-none">Matchday</h1>
           </div>
-          <h1 className="text-4xl font-black text-chalk-white uppercase tracking-tighter italic font-display leading-none">Matchday</h1>
+          
+          {(teamData?.seasons?.length > 0 || teamData?.seasonTag) && (
+            <select
+              value={selectedSeason}
+              onChange={(e) => setSelectedSeason(e.target.value)}
+              className="bg-turf-surface/40 backdrop-blur-md border border-chalk-white/10 rounded-xl px-4 py-2 text-sm font-bold text-chalk-white focus:outline-none focus:border-pitch-green/50 appearance-none font-display italic tracking-wider cursor-pointer hover:bg-turf-surface/60 transition-colors"
+              style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2386EFAC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em 1em', paddingRight: '2.5rem' }}
+            >
+              <option value="all">All Seasons</option>
+              {Array.from(new Set([...(teamData.seasons || []), teamData.seasonTag].filter(Boolean))).map(season => (
+                <option key={season as string} value={season as string}>{season as string}</option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {isCoach && !isSubscribed && !isAdmin && (
@@ -411,7 +436,7 @@ export function Dashboard() {
             <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Upcoming</span>
             <div className="flex items-end justify-between mt-2">
               <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
-                {matches.filter(m => m.status !== 'postponed' && m.status !== 'completed' && m.date && new Date(m.date) > new Date()).length}
+                {filteredMatches.filter(m => m.status !== 'postponed' && m.status !== 'completed' && m.date && new Date(m.date) > new Date()).length}
               </span>
               <CalendarIcon size={20} className="text-pitch-green/40" />
             </div>
@@ -420,7 +445,7 @@ export function Dashboard() {
             <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Next Training</span>
             <div className="flex items-end justify-between mt-2">
               <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
-                {matches.filter(m => m.type === 'training' && m.status !== 'postponed' && m.status !== 'completed' && m.date && new Date(m.date) > new Date()).length > 0 ? '1' : '0'}
+                {filteredMatches.filter(m => m.type === 'training' && m.status !== 'postponed' && m.status !== 'completed' && m.date && new Date(m.date) > new Date()).length > 0 ? '1' : '0'}
               </span>
               <Activity size={20} className="text-blue-500/40" />
             </div>
@@ -429,7 +454,7 @@ export function Dashboard() {
             <span className="text-[9px] font-black text-chalk-white/20 uppercase tracking-widest font-display italic">Completed</span>
             <div className="flex items-end justify-between mt-2">
               <span className="text-3xl font-black text-chalk-white font-display italic leading-none">
-                {matches.filter(m => m.status === 'completed').length}
+                {filteredMatches.filter(m => m.status === 'completed').length}
               </span>
               <Trophy size={20} className="text-yellow-500/40" />
             </div>

@@ -288,21 +288,7 @@ export function Squad() {
             </button>
           )}
           
-          {(profile?.role === 'parent' && !isAdmin) && (
-            <button
-              onClick={() => {
-                if (!isSubscribed) {
-                  navigate('/upgrade');
-                  return;
-                }
-                setShowJoinModal(true);
-              }}
-              className={`${isSubscribed ? 'bg-pitch-green hover:bg-pitch-accent shadow-pitch-green/20' : 'bg-slate-700 hover:bg-slate-600 shadow-none'} text-pitch-dark px-6 py-3 rounded-xl font-display italic uppercase font-black flex items-center gap-2 transition-all shadow-lg`}
-            >
-              {isSubscribed ? <Plus size={20} strokeWidth={3} /> : <Zap size={18} className="text-chalk-white/60" />}
-              <span className="hidden sm:inline">{isSubscribed ? 'Add Player' : 'Upgrade to Add'}</span>
-            </button>
-          )}
+          {/* Added only for coaches */}
         </div>
       </div>
 

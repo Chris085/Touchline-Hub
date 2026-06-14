@@ -62,7 +62,8 @@ export function Stats() {
   const [teamName, setTeamName] = useState<string>(profile?.joinedTeams?.find(t => t.teamId === profile?.teamId)?.teamName || 'Your Team');
 
 
-  const [seasonId, setSeasonId] = useState<string>('');
+  const [seasonId, setSeasonId] = useState<string>('all');
+  const [teamData, setTeamData] = useState<any>(null);
 
   useEffect(() => {
     if (!profile?.teamId) return;
@@ -71,8 +72,9 @@ export function Stats() {
     const unsubTeam = onSnapshot(doc(db, 'teams', profile.teamId), (doc) => {
       if (doc.exists()) {
         const data = doc.data();
+        setTeamData(data);
         if (data.name) setTeamName(data.name);
-        if (data.seasonTag) setSeasonId(data.seasonTag);
+        if (data.seasonTag && seasonId === 'all') setSeasonId(data.seasonTag);
       }
     });
 
@@ -126,8 +128,13 @@ export function Stats() {
     };
   }, [profile?.teamId]);
 
+  const filteredMatches = useMemo(() => {
+    if (seasonId === 'all') return matches;
+    return matches.filter(m => m.season === seasonId);
+  }, [matches, seasonId]);
+
   const stats = useMemo(() => {
-    const completedMatches = matches.filter(m => m.status === 'completed' && m.type === 'match');
+    const completedMatches = filteredMatches.filter(m => m.status === 'completed' && m.type === 'match');
     const totalMatches = completedMatches.length;
     
     let wins = 0;
@@ -178,7 +185,7 @@ export function Stats() {
     // Also include raw votes for matches that might not be finalized yet
     votes.forEach(v => {
       // Only count votes if the match isn't already finalized for parents
-      const match = matches.find(m => m.id === v.matchId);
+      const match = filteredMatches.find(m => m.id === v.matchId);
       if (match && !match.parentPotmId && !match.parentsPotmId) {
         parentPotmCounts[v.playerId] = (parentPotmCounts[v.playerId] || 0) + 1;
       }
@@ -225,7 +232,7 @@ export function Stats() {
       .slice(0, 5);
 
     // Attendance Stats
-    const trainingMatches = matches.filter(m => m.type === 'training');
+    const trainingMatches = filteredMatches.filter(m => m.type === 'training');
     const totalTraining = trainingMatches.length;
     
     // Calculate combined attendance (both coach attendances and parent availabilities)
@@ -261,7 +268,7 @@ export function Stats() {
         const [matchId, playerId] = recordId.split('_');
         if (playerId !== p.id) return;
         
-        const match = matches.find(m => m.id === matchId);
+        const match = filteredMatches.find(m => m.id === matchId);
         if (!match) return;
 
         const att = attendances.find(a => a.matchId === matchId && a.playerId === playerId);
@@ -356,7 +363,12 @@ export function Stats() {
       seasonAwards,
       playerAttendanceStats
     };
-  }, [matches, players, votes, attendances, availabilities]);
+  }, [filteredMatches, players, votes, attendances, availabilities]);
+
+  const displaySummaries = useMemo(() => {
+    if (seasonId === 'all') return seasonSummaries;
+    return seasonSummaries.filter(s => s.seasonId === seasonId);
+  }, [seasonSummaries, seasonId]);
 
   if (loading) {
     return (
@@ -370,9 +382,25 @@ export function Stats() {
     <div className="space-y-8 pb-20">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-black text-slate-50 uppercase italic font-display tracking-tight">Team Statistics</h1>
-          <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Season Performance Overview</p>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex flex-col gap-2">
+            <h1 className="text-3xl font-black text-slate-50 uppercase italic font-display tracking-tight">Team Statistics</h1>
+            <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Season Performance Overview</p>
+          </div>
+          
+          {(teamData?.seasons?.length > 0 || teamData?.seasonTag) && (
+            <select
+              value={seasonId}
+              onChange={(e) => setSeasonId(e.target.value)}
+              className="bg-turf-surface/40 backdrop-blur-md border border-chalk-white/10 rounded-xl px-4 py-2 text-sm font-bold text-chalk-white focus:outline-none focus:border-pitch-green/50 appearance-none font-display italic tracking-wider cursor-pointer hover:bg-turf-surface/60 transition-colors"
+              style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2386EFAC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em 1em', paddingRight: '2.5rem' }}
+            >
+              <option value="all">All Seasons</option>
+              {Array.from(new Set([...(teamData.seasons || []), teamData.seasonTag].filter(Boolean))).map(season => (
+                <option key={season as string} value={season as string}>{season as string}</option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
           <button 
@@ -689,7 +717,7 @@ export function Stats() {
       </motion.div>
 
       {/* Saved AI Insights */}
-      {seasonSummaries.length > 0 && (
+      {displaySummaries.length > 0 && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -703,7 +731,7 @@ export function Stats() {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {seasonSummaries.map((summary) => (
+            {displaySummaries.map((summary) => (
               <div 
                 key={summary.id}
                 onClick={() => setSelectedInsight(summary)}
@@ -767,7 +795,7 @@ export function Stats() {
         onClose={() => setShowAnalyticsModal(false)}
         seasonId={seasonId}
         teamId={profile?.teamId || ''}
-        matches={matches}
+        matches={filteredMatches}
         players={players}
         stats={stats}
       />

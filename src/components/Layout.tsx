@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ConfirmModal } from './ConfirmModal';
-import { collection, query, where, onSnapshot, limit, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit, orderBy, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -39,6 +39,7 @@ export function Layout() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeMatch, setActiveMatch] = useState<boolean>(false);
   const [activeVoting, setActiveVoting] = useState<boolean>(false);
+  const [teamData, setTeamData] = useState<any>(null);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -54,6 +55,15 @@ export function Layout() {
 
   useEffect(() => {
     if (!profile?.teamId) return;
+
+    // Listen for team data
+    const unsubscribeTeam = onSnapshot(doc(db, 'teams', profile.teamId), (snapshot) => {
+      if (snapshot.exists()) {
+        setTeamData(snapshot.data());
+      } else {
+        setTeamData(null);
+      }
+    });
 
     // Listen for active matches
     const matchesQuery = query(
@@ -80,6 +90,7 @@ export function Layout() {
     return () => {
       unsubscribeMatches();
       unsubscribeVoting();
+      unsubscribeTeam();
     };
   }, [profile?.teamId, location.pathname]);
 
@@ -129,14 +140,15 @@ export function Layout() {
     hasBadge?: boolean;
     hideIfActive?: boolean;
     hideInMenu?: boolean;
+    featureKey?: string;
   }[] = [
     { name: 'Stats', path: '/stats', icon: BarChart3 },
-    { name: 'Payments', path: '/payments', icon: Wallet, coachOnly: true },
+    { name: 'Payments', path: '/payments', icon: Wallet, coachOnly: true, featureKey: 'enablePayments' },
     { name: 'Squad', path: '/squad', icon: Users },
     { name: 'Schedule', path: '/', icon: Calendar, alwaysShow: true },
-    { name: 'Learning', path: '/learning', icon: BookOpen },
+    { name: 'Learning', path: '/learning', icon: BookOpen, featureKey: 'enableLearning' },
     { name: 'Features', path: '/features', icon: LayoutGrid },
-    { name: 'Notes', path: '/notes', icon: FileText, coachOnly: true },
+    { name: 'Notes', path: '/notes', icon: FileText, coachOnly: true, featureKey: 'enableNotes' },
     { name: 'Admin', path: '/admin', icon: Shield, adminOnly: true },
     { 
       name: 'Live Match', 
@@ -170,7 +182,8 @@ export function Layout() {
                           trialDaysLeft > 0;
 
   const bottomNavItems = navItems.filter(item => 
-    item.alwaysShow || (item.dynamic && item.active && (!item.coachOnly || profile?.role === 'coach' || isAdmin))
+    (item.alwaysShow || (item.dynamic && item.active && (!item.coachOnly || profile?.role === 'coach' || isAdmin))) &&
+    (!item.featureKey || teamData?.features?.[item.featureKey] !== false)
   );
 
   const burgerItems = navItems.filter(item => 
@@ -178,7 +191,8 @@ export function Layout() {
     !item.hideInMenu &&
     (!item.coachOnly || profile?.role === 'coach' || isAdmin) &&
     (!item.adminOnly || isAdmin) &&
-    (!item.hideIfActive || !isSubscribed)
+    (!item.hideIfActive || !isSubscribed) &&
+    (!item.featureKey || teamData?.features?.[item.featureKey] !== false)
   );
 
   return (
@@ -203,10 +217,16 @@ export function Layout() {
               </button>
               
               <Link to="/" className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                  <span className="text-slate-950 font-bold text-lg">TH</span>
-                </div>
-                <span className="text-xl font-bold tracking-tight text-slate-50 hidden sm:block">The Touchline Hub</span>
+                {teamData?.badge ? (
+                  <img src={teamData.badge} alt={`${teamData.name} Badge`} className="w-8 h-8 rounded-full object-cover border border-slate-700" />
+                ) : (
+                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center overflow-hidden">
+                    <span className="text-slate-950 font-bold text-lg">TH</span>
+                  </div>
+                )}
+                <span className="text-xl font-bold tracking-tight text-slate-50 hidden sm:block">
+                  {teamData?.name || 'The Touchline Hub'}
+                </span>
               </Link>
             </div>
             
@@ -248,10 +268,14 @@ export function Layout() {
             >
               <div className="p-6 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <span className="text-slate-950 font-bold text-lg">TH</span>
-                  </div>
-                  <span className="font-bold text-slate-50">Menu</span>
+                  {teamData?.badge ? (
+                    <img src={teamData.badge} alt={`${teamData.name} Badge`} className="w-8 h-8 rounded-full object-cover border border-slate-700" />
+                  ) : (
+                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center overflow-hidden">
+                      <span className="text-slate-950 font-bold text-lg">TH</span>
+                    </div>
+                  )}
+                  <span className="font-bold text-slate-50">{teamData?.name || 'Menu'}</span>
                 </div>
                 <button onClick={() => setIsMenuOpen(false)} className="text-slate-400 hover:text-slate-50">
                   <X size={24} />

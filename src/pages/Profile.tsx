@@ -47,17 +47,34 @@ export function Profile() {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'activity' | 'season' | 'teams'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'activity' | 'season' | 'teams' | 'settings' | 'notifications'>('overview');
   const [teamData, setTeamData] = useState<any>(null);
   const [joinCode, setJoinCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
+  const [showNewSeasonModal, setShowNewSeasonModal] = useState(false);
+  const [newSeasonName, setNewSeasonName] = useState('');
   const [seasonSettings, setSeasonSettings] = useState({
+    name: '',
+    badge: '',
     seasonStart: '',
     seasonEnd: '',
     seasonTag: '',
     halfDuration: 20,
-    maxMatchPlayers: 16
+    maxMatchPlayers: 16,
+    seasons: [] as string[],
+    features: {
+      dragAndDropPitch: true,
+      enablePayments: true,
+      enableLearning: true,
+      enableNotes: true
+    },
+    notificationSettings: {
+      matchScheduled: true,
+      matchUpdate: true,
+      attendanceReminder: true,
+      trainingReminder: true
+    }
   });
   const [isSavingSeason, setIsSavingSeason] = useState(false);
   const [saveToast, setSaveToast] = useState(false);
@@ -78,11 +95,26 @@ export function Profile() {
         const data = teamSnap.data();
         setTeamData(data);
         setSeasonSettings({
+          name: data.name || '',
+          badge: data.badge || '',
           seasonStart: data.seasonStart || '',
           seasonEnd: data.seasonEnd || '',
           seasonTag: data.seasonTag || '',
           halfDuration: data.halfDuration || 20,
-          maxMatchPlayers: data.maxMatchPlayers || 16
+          maxMatchPlayers: data.maxMatchPlayers || 16,
+          seasons: data.seasons || (data.seasonTag ? [data.seasonTag] : []),
+          features: {
+            dragAndDropPitch: data.features?.dragAndDropPitch ?? true,
+            enablePayments: data.features?.enablePayments ?? true,
+            enableLearning: data.features?.enableLearning ?? true,
+            enableNotes: data.features?.enableNotes ?? true
+          },
+          notificationSettings: {
+            matchScheduled: data.notificationSettings?.matchScheduled ?? true,
+            matchUpdate: data.notificationSettings?.matchUpdate ?? true,
+            attendanceReminder: data.notificationSettings?.attendanceReminder ?? true,
+            trainingReminder: data.notificationSettings?.trainingReminder ?? true
+          }
         });
       }
     };
@@ -206,6 +238,45 @@ export function Profile() {
     }
   };
 
+  const handleStartNewSeason = async () => {
+    if (!profile?.teamId || !newSeasonName) return;
+
+    try {
+      const updatedSeasons = [...(seasonSettings.seasons || [])];
+      if (seasonSettings.seasonTag && !updatedSeasons.includes(seasonSettings.seasonTag)) {
+        updatedSeasons.push(seasonSettings.seasonTag);
+      }
+      if (!updatedSeasons.includes(newSeasonName)) {
+        updatedSeasons.push(newSeasonName);
+      }
+
+      const teamRef = doc(db, 'teams', profile.teamId);
+      await updateDoc(teamRef, {
+        seasonTag: newSeasonName,
+        seasonStart: '',
+        seasonEnd: '',
+        seasons: updatedSeasons
+      });
+
+      setSeasonSettings(prev => ({
+        ...prev,
+        seasonTag: newSeasonName,
+        seasonStart: '',
+        seasonEnd: '',
+        seasons: updatedSeasons
+      }));
+      setTeamData({ ...teamData, seasonTag: newSeasonName, seasonStart: '', seasonEnd: '', seasons: updatedSeasons });
+      
+      setShowNewSeasonModal(false);
+      setNewSeasonName('');
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 3000);
+    } catch (error) {
+      console.error('Error starting new season:', error);
+      alert('Failed to start new season.');
+    }
+  };
+
   const handleSaveSeason = async () => {
     if (!profile?.teamId) return;
     setIsSavingSeason(true);
@@ -215,6 +286,14 @@ export function Profile() {
         ...seasonSettings
       });
       setTeamData({ ...teamData, ...seasonSettings });
+
+      if (profile.joinedTeams) {
+        const updatedJoinedTeams = profile.joinedTeams.map(t => 
+          t.teamId === profile.teamId ? { ...t, teamName: seasonSettings.name } : t
+        );
+        await updateProfile({ joinedTeams: updatedJoinedTeams });
+      }
+
       setSaveToast(true);
       setTimeout(() => setSaveToast(false), 3000);
     } catch (error) {
@@ -373,50 +452,75 @@ export function Profile() {
       </div>
 
       {/* Tabs */}
-      <div className="flex p-1 bg-slate-900 rounded-2xl border border-slate-800">
+      <div className="grid grid-cols-4 sm:grid-cols-7 gap-1 p-1 bg-slate-900 rounded-2xl border border-slate-800">
         <button
           onClick={() => setActiveTab('overview')}
-          className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
             activeTab === 'overview' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
           }`}
         >
-          Overview
+          <UserIcon size={16} />
+          <span className="hidden sm:inline">Overview</span>
         </button>
         {(isCoach || isSubscriptionOwner) && (
           <button
             onClick={() => setActiveTab('team')}
-            className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+            className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
               activeTab === 'team' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
             }`}
           >
-            Team Management
+            <Users size={16} />
+            <span className="hidden sm:inline">Team</span>
           </button>
         )}
         {isCoach && (
           <button
             onClick={() => setActiveTab('season')}
-            className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+            className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
               activeTab === 'season' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
             }`}
           >
-            Season Setup
+            <RefreshCw size={16} />
+            <span className="hidden sm:inline">Season</span>
+          </button>
+        )}
+        {isCoach && (
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+              activeTab === 'settings' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <Settings size={16} />
+            <span className="hidden sm:inline">Settings</span>
           </button>
         )}
         <button
           onClick={() => setActiveTab('teams')}
-          className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
             activeTab === 'teams' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
           }`}
         >
-          My Teams
+          <Shield size={16} />
+          <span className="hidden sm:inline">Teams</span>
         </button>
         <button
           onClick={() => setActiveTab('activity')}
-          className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+          className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
             activeTab === 'activity' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
           }`}
         >
-          Activity
+          <Activity size={16} />
+          <span className="hidden sm:inline">Activity</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('notifications')}
+          className={`flex flex-col sm:flex-row items-center justify-center gap-1 py-2 px-1 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${
+            activeTab === 'notifications' ? 'bg-slate-800 text-slate-50 shadow-lg' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Bell size={16} />
+          <span className="hidden sm:inline">Alerts</span>
         </button>
       </div>
 
@@ -645,11 +749,34 @@ export function Profile() {
             >
               <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold text-slate-50">Season Configuration</h3>
-                  <Calendar size={20} className="text-slate-500" />
+                  <h3 className="text-lg font-bold text-slate-50">Team & Season Settings</h3>
+                  <Settings size={20} className="text-slate-500" />
                 </div>
 
                 <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Team Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g., Astley & Buckshaw U10s"
+                      value={seasonSettings.name}
+                      onChange={(e) => setSeasonSettings({ ...seasonSettings, name: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Team Badge URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://example.com/badge.png"
+                      value={seasonSettings.badge}
+                      onChange={(e) => setSeasonSettings({ ...seasonSettings, badge: e.target.value })}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                    />
+                    <p className="text-[10px] text-slate-500 italic">Provide a direct link to an image (PNG, JPG, SVG) to display as your team badge.</p>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Season Start Date</label>
@@ -727,14 +854,220 @@ export function Profile() {
 
               <div className="bg-slate-800/30 rounded-3xl border border-slate-700/30 p-6">
                 <h4 className="text-sm font-bold text-slate-50 mb-2">Current Season Info</h4>
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-2xl bg-slate-800 text-green-400">
-                    <Zap size={20} />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="p-3 rounded-2xl bg-slate-800 text-green-400">
+                      <Zap size={20} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">Active Season</p>
+                      <p className="text-lg font-black text-slate-50 italic font-display">{seasonSettings.seasonTag || 'Not Set'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-300 uppercase tracking-widest">Active Season</p>
-                    <p className="text-lg font-black text-slate-50 italic font-display">{seasonSettings.seasonTag || 'Not Set'}</p>
+                  <button
+                    onClick={() => setShowNewSeasonModal(true)}
+                    className="px-4 py-2 bg-slate-800 text-green-400 rounded-xl text-sm font-bold uppercase tracking-widest hover:bg-slate-700 transition-colors"
+                  >
+                    Start New Season
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'settings' && isCoach && (
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-lg font-bold text-slate-50">Feature Toggles</h3>
+                  <Zap size={20} className="text-slate-500" />
+                </div>
+
+                <div className="space-y-6">
+                  <label className="flex items-start gap-4 cursor-pointer group">
+                    <div className="relative flex items-center justify-center mt-1">
+                      <input
+                        type="checkbox"
+                        checked={seasonSettings.features.dragAndDropPitch}
+                        onChange={(e) => setSeasonSettings(prev => ({
+                          ...prev,
+                          features: {
+                            ...prev.features,
+                            dragAndDropPitch: e.target.checked
+                          }
+                        }))}
+                        className="peer sr-only"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors">Drag & Drop Pitch</p>
+                      <p className="text-xs text-slate-400 mt-1">Enable or disable the interactive match pitch within the Live Match screen.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-4 cursor-pointer group">
+                    <div className="relative flex items-center justify-center mt-1">
+                      <input
+                        type="checkbox"
+                        checked={seasonSettings.features.enablePayments ?? true}
+                        onChange={(e) => setSeasonSettings(prev => ({
+                          ...prev,
+                          features: {
+                            ...prev.features,
+                            enablePayments: e.target.checked
+                          }
+                        }))}
+                        className="peer sr-only"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors">Payments Module</p>
+                      <p className="text-xs text-slate-400 mt-1">Enable the subscriptions & payments tracking module (Coach only).</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-4 cursor-pointer group">
+                    <div className="relative flex items-center justify-center mt-1">
+                      <input
+                        type="checkbox"
+                        checked={seasonSettings.features.enableLearning ?? true}
+                        onChange={(e) => setSeasonSettings(prev => ({
+                          ...prev,
+                          features: {
+                            ...prev.features,
+                            enableLearning: e.target.checked
+                          }
+                        }))}
+                        className="peer sr-only"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors">Learning Hub</p>
+                      <p className="text-xs text-slate-400 mt-1">Enable access to educational resources and session plans.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-4 cursor-pointer group">
+                    <div className="relative flex items-center justify-center mt-1">
+                      <input
+                        type="checkbox"
+                        checked={seasonSettings.features.enableNotes ?? true}
+                        onChange={(e) => setSeasonSettings(prev => ({
+                          ...prev,
+                          features: {
+                            ...prev.features,
+                            enableNotes: e.target.checked
+                          }
+                        }))}
+                        className="peer sr-only"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors">Coaches Notes</p>
+                      <p className="text-xs text-slate-400 mt-1">Enable the private notes module for coaches to log observations.</p>
+                    </div>
+                  </label>
+
+                  <div className="border-t border-slate-700 pt-6">
+                    <h3 className="text-lg font-bold text-slate-50 mb-6">Notification Settings</h3>
+                    <div className="space-y-6">
+                        {Object.entries(seasonSettings.notificationSettings).map(([key, value]) => (
+                          <label key={key} className="flex items-start gap-4 cursor-pointer group">
+                            <div className="relative flex items-center justify-center mt-1">
+                              <input
+                                type="checkbox"
+                                checked={value}
+                                onChange={(e) => setSeasonSettings(prev => ({
+                                  ...prev,
+                                  notificationSettings: {
+                                    ...prev.notificationSettings,
+                                    [key]: e.target.checked
+                                  }
+                                }))}
+                                className="peer sr-only"
+                              />
+                              <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors capitalize">{key.replace(/([A-Z])/g, ' $1')}</p>
+                                <p className="text-xs text-slate-400 mt-1">Enable to send {key.replace(/([A-Z])/g, ' $1').toLowerCase()} notifications to all team members.</p>
+                            </div>
+                          </label>
+                        ))}
+                    </div>
                   </div>
+
+                  <button
+                    onClick={handleSaveSeason}
+                    disabled={isSavingSeason}
+                    className="w-full py-4 bg-green-500 hover:bg-green-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-500/20 hover:shadow-green-500/40 hover:-translate-y-1 active:scale-[0.98] border border-green-400/50 hover:border-green-300"
+                  >
+                    {isSavingSeason ? (
+                      <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <Settings size={16} />
+                    )}
+                    Save Settings
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <motion.div
+              key="notifications"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
+                <h3 className="text-lg font-bold text-slate-50 mb-6">Notification Preferences</h3>
+                <p className="text-sm text-slate-400 mb-6">Choose which notifications you'd like to opt out of receiving.</p>
+                
+                <div className="space-y-6">
+                  {Object.entries(profile?.notificationPreferences || {
+                      matchScheduled: true,
+                      matchUpdate: true,
+                      attendanceReminder: true,
+                      trainingReminder: true
+                  }).map(([key, value]) => (
+                    <label key={key} className="flex items-start gap-4 cursor-pointer group">
+                      <div className="relative flex items-center justify-center mt-1">
+                        <input
+                          type="checkbox"
+                          checked={value}
+                          onChange={(e) => updateProfile({
+                              notificationPreferences: {
+                                  ...(profile?.notificationPreferences || {
+                                      matchScheduled: true,
+                                      matchUpdate: true,
+                                      attendanceReminder: true,
+                                      trainingReminder: true
+                                  }),
+                                  [key]: e.target.checked
+                              }
+                          })}
+                          className="peer sr-only"
+                        />
+                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                      </div>
+                      <div>
+                          <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors capitalize">{key.replace(/([A-Z])/g, ' $1')}</p>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
             </motion.div>
@@ -883,6 +1216,54 @@ export function Profile() {
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {showNewSeasonModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-slate-900 border border-slate-800 rounded-[2rem] p-8 w-full max-w-md shadow-2xl"
+            >
+              <h2 className="text-2xl font-black text-slate-50 uppercase italic font-display tracking-tight mb-2">Start New Season</h2>
+              <p className="text-slate-400 text-sm mb-6">
+                Enter a name for the new season (e.g. 26/27). Past data will still be accessible, and all current players, notes, and team settings will be carried over.
+              </p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">New Season Tag</label>
+                  <input
+                    type="text"
+                    value={newSeasonName}
+                    onChange={(e) => setNewSeasonName(e.target.value)}
+                    placeholder="e.g. 26/27"
+                    autoFocus
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-50 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => setShowNewSeasonModal(false)}
+                    className="flex-1 px-4 py-3 bg-slate-800 text-slate-300 rounded-xl font-bold hover:bg-slate-700 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleStartNewSeason}
+                    disabled={!newSeasonName}
+                    className="flex-1 px-4 py-3 bg-green-500 text-slate-950 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-400 transition-colors"
+                  >
+                    Start Season
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <ConfirmModal
         isOpen={confirmRemove.isOpen}
