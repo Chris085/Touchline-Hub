@@ -21,6 +21,7 @@ export interface UserProfile {
   photoURL: string;
   role: Role;
   teamId?: string;
+  organisationId?: string;
   joinedTeams?: { teamId: string; role: Role; teamName: string }[];
   subscriptionStatus?: 'active' | 'inactive';
   trialEndDate?: string;

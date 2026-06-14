@@ -43,12 +43,27 @@
       },
       "required": ["code", "isUsed"]
     },
+    "Organisation": {
+      "title": "Organisation",
+      "description": "An organisation (Team or Club) that owns teams",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["team", "club"] },
+        "logoUrl": { "type": "string" },
+        "subscriptionTier": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "createdBy", "createdAt"]
+    },
     "Team": {
       "title": "Team",
       "description": "A football team",
       "type": "object",
       "properties": {
         "name": { "type": "string" },
+        "organisationId": { "type": "string" },
         "code": { "type": "string", "description": "6-digit code for parents to join" },
         "coachId": { "type": "string" },
         "seasonStart": { "type": "string", "format": "date" },
@@ -66,7 +81,7 @@
           }
         }
       },
-      "required": ["name", "code", "coachId"]
+      "required": ["name", "organisationId", "code", "coachId"]
     },
     "Player": {
       "title": "Player",
@@ -248,6 +263,10 @@
     "users/{userId}": {
       "schema": "User",
       "description": "User profiles"
+    },
+    "organisations/{organisationId}": {
+      "schema": "Organisation",
+      "description": "Organisations (Team or Club)"
     },
     "teams/{teamId}": {
       "schema": "Team",
