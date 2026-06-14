@@ -50,7 +50,7 @@ export function PlayerProfile() {
     if (!id || !profile?.teamId) return;
     
     // Fetch player balance
-    const q = query(collection(db, 'playerPayments'), where('playerId', '==', id), where('teamId', '==', profile.teamId));
+    const q = query(collection(db, 'playerPayments'), where('playerId', '==', id), where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId));
     const unsubBalance = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         setPlayerBalance(snapshot.docs[0].data());
@@ -108,7 +108,8 @@ export function PlayerProfile() {
       const qNotes = query(
         notesRef, 
         where('playerId', '==', id),
-        where('teamId', '==', profile.teamId)
+        where('teamId', '==', profile.teamId),
+        where('organisationId', '==', profile.organisationId)
       );
       unsubNotes = onSnapshot(qNotes, (snapshot) => {
         const notesData = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
@@ -123,7 +124,8 @@ export function PlayerProfile() {
     const qAtt = query(
       attRef, 
       where('playerId', '==', id),
-      where('teamId', '==', profile.teamId)
+      where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId)
     );
     const unsubAtt = onSnapshot(qAtt, (snapshot) => {
       const attData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -132,14 +134,14 @@ export function PlayerProfile() {
 
     // Fetch matches for stats and availability
     const matchesRef = collection(db, 'matches');
-    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId));
+    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId));
     const unsubMatches = onSnapshot(qMatches, (snapshot) => {
       setMatches(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'matches'));
 
     // Fetch player's availabilities
     const availRef = collection(db, 'availabilities');
-    const qAvail = query(availRef, where('playerId', '==', id), where('teamId', '==', profile.teamId));
+    const qAvail = query(availRef, where('playerId', '==', id), where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId));
     const unsubAvail = onSnapshot(qAvail, (snapshot) => {
       setAvailabilities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'availabilities'));

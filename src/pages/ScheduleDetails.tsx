@@ -128,6 +128,7 @@ export function ScheduleDetails() {
     const qNotes = query(
       notesRef,
       where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId),
       where('relatedId', '==', id),
       orderBy('createdAt', 'desc')
     );
@@ -231,7 +232,7 @@ export function ScheduleDetails() {
 
     // Fetch all players for the team
     const playersRef = collection(db, 'players');
-    const qPlayers = query(playersRef, where('teamId', '==', profile.teamId));
+    const qPlayers = query(playersRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId));
     const unsubPlayers = onSnapshot(qPlayers, (snapshot) => {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'players'));
@@ -241,7 +242,8 @@ export function ScheduleDetails() {
     const qAvail = query(
       availRef, 
       where('matchId', '==', id),
-      where('teamId', '==', profile.teamId)
+      where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId)
     );
     const unsubAvail = onSnapshot(qAvail, (snapshot) => {
       const availData: Record<string, any> = {};
@@ -257,7 +259,8 @@ export function ScheduleDetails() {
     const qAttendance = query(
       attendanceRef, 
       where('matchId', '==', id),
-      where('teamId', '==', profile.teamId)
+      where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId)
     );
     const unsubAttendance = onSnapshot(qAttendance, (snapshot) => {
       const attData: Record<string, any> = {};
@@ -273,7 +276,8 @@ export function ScheduleDetails() {
     const qVotes = query(
       votesRef, 
       where('matchId', '==', id),
-      where('teamId', '==', profile.teamId)
+      where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId)
     );
     const unsubVotes = onSnapshot(qVotes, (snapshot) => {
       setVotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));

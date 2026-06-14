@@ -69,6 +69,7 @@ export function Layout() {
     const matchesQuery = query(
       collection(db, 'matches'),
       where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId),
       where('status', '==', 'in-progress')
     );
 
@@ -80,6 +81,7 @@ export function Layout() {
     const votingQuery = query(
       collection(db, 'matches'),
       where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId),
       where('isPotmVotingOpen', '==', true)
     );
 

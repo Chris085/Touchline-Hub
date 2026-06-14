@@ -19,7 +19,7 @@ export function MotmVoting() {
 
     // Fetch all matches
     const matchesRef = collection(db, 'matches');
-    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId), where('type', '==', 'match'));
+    const qMatches = query(matchesRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId), where('type', '==', 'match'));
     
     const unsubMatches = onSnapshot(qMatches, (snapshot) => {
       const matchesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
@@ -32,7 +32,7 @@ export function MotmVoting() {
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'matches'));
 
     const playersRef = collection(db, 'players');
-    const qPlayers = query(playersRef, where('teamId', '==', profile.teamId));
+    const qPlayers = query(playersRef, where('teamId', '==', profile.teamId), where('organisationId', '==', profile.organisationId));
     
     const unsubPlayers = onSnapshot(qPlayers, (snapshot) => {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -51,7 +51,8 @@ export function MotmVoting() {
     const qVotes = query(
       votesRef, 
       where('matchId', '==', selectedMatch.id),
-      where('teamId', '==', profile.teamId)
+      where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId)
     );
     
     const unsubVotes = onSnapshot(qVotes, (snapshot) => {

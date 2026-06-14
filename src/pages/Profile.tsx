@@ -156,7 +156,8 @@ export function Profile() {
     // Fetch team members
     const membersQuery = query(
       collection(db, 'users'),
-      where('teamId', '==', profile.teamId)
+      where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId)
     );
 
     const unsubscribeMembers = onSnapshot(membersQuery, (snapshot) => {
@@ -172,6 +173,7 @@ export function Profile() {
     const matchesQuery = query(
       collection(db, 'matches'),
       where('teamId', '==', profile.teamId),
+      where('organisationId', '==', profile.organisationId),
       orderBy('date', 'desc'),
       limit(1)
     );
