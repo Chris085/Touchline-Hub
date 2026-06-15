@@ -30,7 +30,8 @@ import {
   Calendar,
   Filter,
   ArrowUpRight,
-  ArrowDownLeft
+  ArrowDownLeft,
+  Check
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, subMonths, isSameMonth } from 'date-fns';
 
@@ -88,6 +89,8 @@ export function Payments() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentType, setPaymentType] = useState<'match' | 'monthly'>('match');
   const [paymentNote, setPaymentNote] = useState('');
+  const [addPaymentLoading, setAddPaymentLoading] = useState(false);
+  const [addPaymentSuccess, setAddPaymentSuccess] = useState(false);
 
   const isCoach = profile?.role === 'coach' || isAdmin;
 
@@ -176,6 +179,7 @@ export function Payments() {
     e.preventDefault();
     if (!showAddPayment || !paymentAmount || !profile?.teamId) return;
 
+    setAddPaymentLoading(true);
     const amount = parseFloat(paymentAmount);
     const playerId = showAddPayment;
 
@@ -209,11 +213,17 @@ export function Payments() {
         }
       }
 
-      setShowAddPayment(null);
-      setPaymentAmount('');
-      setPaymentNote('');
+      setAddPaymentSuccess(true);
+      setTimeout(() => {
+        setAddPaymentSuccess(false);
+        setShowAddPayment(null);
+        setPaymentAmount('');
+        setPaymentNote('');
+      }, 1000);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'paymentTransactions');
+    } finally {
+      setAddPaymentLoading(false);
     }
   };
 
@@ -795,10 +805,10 @@ export function Payments() {
 
                 <button
                   type="submit"
-                  className="w-full bg-green-500 hover:bg-green-400 text-slate-950 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform active:scale-95 shadow-lg shadow-green-500/20"
+                  disabled={addPaymentLoading || addPaymentSuccess}
+                  className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-transform shadow-lg disabled:opacity-50 ${addPaymentSuccess ? 'bg-green-500 text-slate-950 shadow-green-500/20' : 'bg-green-500 hover:bg-green-400 text-slate-950 shadow-green-500/20 active:scale-95'}`}
                 >
-                  <Save size={20} />
-                  Record Payment
+                  {addPaymentSuccess ? <><Check size={20} /> Saved</> : addPaymentLoading ? 'Saving...' : <><Save size={20} /> Record Payment</>}
                 </button>
               </form>
             </motion.div>

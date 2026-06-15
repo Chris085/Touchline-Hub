@@ -35,6 +35,9 @@ export function Squad() {
   const [joinCode, setJoinCode] = useState('');
   const [joinError, setJoinError] = useState('');
   const [joinLoading, setJoinLoading] = useState(false);
+  const [joinSuccess, setJoinSuccess] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
+  const [addSuccess, setAddSuccess] = useState(false);
   const [showTeamInviteModal, setShowTeamInviteModal] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -135,6 +138,7 @@ export function Squad() {
     e.preventDefault();
     if (!profile?.teamId || !newPlayerName.trim() || !isSubscribed) return;
 
+    setAddLoading(true);
     try {
       await addDoc(collection(db, 'players'), {
         name: newPlayerName.trim(),
@@ -144,11 +148,17 @@ export function Squad() {
         inviteCode: generateInviteCode(),
         motmAwards: 0
       });
-      setShowAddModal(false);
-      setNewPlayerName('');
-      setNewPlayerPosition('');
+      setAddSuccess(true);
+      setTimeout(() => {
+        setAddSuccess(false);
+        setShowAddModal(false);
+        setNewPlayerName('');
+        setNewPlayerPosition('');
+      }, 1000);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'players');
+    } finally {
+      setAddLoading(false);
     }
   };
 
@@ -195,8 +205,12 @@ export function Squad() {
         parentIds: arrayUnion(profile?.uid)
       });
 
-      setShowJoinModal(false);
-      setJoinCode('');
+      setJoinSuccess(true);
+      setTimeout(() => {
+        setJoinSuccess(false);
+        setShowJoinModal(false);
+        setJoinCode('');
+      }, 1000);
     } catch (err: any) {
       try {
         handleFirestoreError(err, OperationType.GET, 'players');
@@ -529,10 +543,10 @@ export function Squad() {
                 </button>
                 <button
                   type="submit"
-                  disabled={joinLoading}
-                  className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all disabled:opacity-50 shadow-lg shadow-pitch-green/20 text-xs"
+                  disabled={joinLoading || joinSuccess}
+                  className={`flex-1 ${joinSuccess ? 'bg-pitch-green text-pitch-dark' : 'bg-pitch-green hover:bg-pitch-accent text-pitch-dark'} py-4 rounded-xl font-display italic uppercase font-black transition-all disabled:opacity-50 shadow-lg shadow-pitch-green/20 text-xs flex items-center justify-center gap-2`}
                 >
-                  {joinLoading ? 'Adding...' : 'Add Player'}
+                  {joinSuccess ? <><Check size={16} strokeWidth={3} /> Saved</> : joinLoading ? 'Adding...' : 'Add Player'}
                 </button>
               </div>
             </form>
@@ -600,9 +614,10 @@ export function Squad() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all shadow-lg shadow-pitch-green/20 text-xs"
+                  disabled={addLoading || addSuccess}
+                  className={`flex-1 ${addSuccess ? 'bg-pitch-green text-pitch-dark' : 'bg-pitch-green hover:bg-pitch-accent text-pitch-dark'} py-4 rounded-xl font-display italic uppercase font-black transition-all shadow-lg shadow-pitch-green/20 text-xs disabled:opacity-50 flex items-center justify-center gap-2`}
                 >
-                  Add Player
+                  {addSuccess ? <><Check size={16} strokeWidth={3} /> Saved</> : addLoading ? 'Adding...' : 'Add Player'}
                 </button>
               </div>
             </form>

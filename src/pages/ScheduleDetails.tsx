@@ -10,12 +10,15 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { ConfirmModal } from '../components/ConfirmModal';
 import { MatchSummaryModal } from '../components/MatchSummaryModal';
+import { Drill } from './TrainingLibrary';
+import { OpponentSelector } from '../components/OpponentSelector';
 
 export function ScheduleDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { profile, isAdmin } = useAuth();
   const [match, setMatch] = useState<any>(null);
+  const [drills, setDrills] = useState<Drill[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
   const [availabilities, setAvailabilities] = useState<Record<string, any>>({});
   const [attendances, setAttendances] = useState<Record<string, any>>({});
@@ -46,6 +49,8 @@ export function ScheduleDetails() {
   const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
   const [teamName, setTeamName] = useState<string>('Your Team');
   const [maxMatchPlayers, setMaxMatchPlayers] = useState<number>(16);
+  const [updateMatchLoading, setUpdateMatchLoading] = useState(false);
+  const [updateMatchSuccess, setUpdateMatchSuccess] = useState(false);
 
   useEffect(() => {
     if (!profile?.teamId) return;
@@ -237,6 +242,13 @@ export function ScheduleDetails() {
       setPlayers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'players'));
 
+    // Fetch drills
+    const drillsRef = collection(db, 'drills');
+    const qDrills = query(drillsRef, where('teamId', '==', profile.teamId));
+    const unsubDrills = onSnapshot(qDrills, (snapshot) => {
+      setDrills(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Drill)));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'drills'));
+
     // Fetch availabilities for this match
     const availRef = collection(db, 'availabilities');
     const qAvail = query(
@@ -283,6 +295,7 @@ export function ScheduleDetails() {
     return () => {
       unsubMatch();
       unsubPlayers();
+      unsubDrills();
       unsubAvail();
       unsubAttendance();
       unsubVotes();
@@ -350,6 +363,7 @@ export function ScheduleDetails() {
     e.preventDefault();
     if (!profile?.teamId || !editingMatch) return;
 
+    setUpdateMatchLoading(true);
     try {
       const { id, ...updateData } = editingMatch;
       await setDoc(doc(db, 'matches', id), updateData, { merge: true });
@@ -363,10 +377,16 @@ export function ScheduleDetails() {
         notificationType: 'matchUpdate'
       });
       
-      setShowEditModal(false);
-      setEditingMatch(null);
+      setUpdateMatchSuccess(true);
+      setTimeout(() => {
+        setUpdateMatchSuccess(false);
+        setShowEditModal(false);
+        setEditingMatch(null);
+      }, 1000);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${editingMatch.id}`);
+    } finally {
+      setUpdateMatchLoading(false);
     }
   };
 
@@ -580,6 +600,42 @@ export function ScheduleDetails() {
                 )}
               </div>
             </div>
+
+            {match.type === 'training' && match.drillIds?.length > 0 && (
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-pitch-dark/50 rounded-2xl flex items-center justify-center shrink-0 border border-chalk-white/5">
+                  <FileText size={24} className="text-pitch-green" />
+                </div>
+                <div className="flex-1 w-full max-w-full overflow-hidden">
+                  <p className="text-[10px] text-chalk-white/20 font-black uppercase tracking-widest mb-2 font-display italic">Training Plan</p>
+                  <div className="space-y-2 max-w-full">
+                    {match.drillIds.map((drillId: string) => {
+                      const drill = drills.find(d => d.id === drillId);
+                      if (!drill) return null;
+                      return (
+                        <div key={drill.id} className="bg-chalk-white/5 border border-chalk-white/10 rounded-xl p-3 flex flex-col sm:flex-row sm:items-start justify-between gap-2 max-w-full overflow-hidden group">
+                          <div className="min-w-0 pr-4">
+                            <h4 className="text-sm font-black text-slate-50 uppercase tracking-tight italic font-display">{drill.title}</h4>
+                            <p className="text-xs text-chalk-white/60 truncate w-full" title={drill.description}>{drill.description}</p>
+                          </div>
+                          {drill.url && (
+                            <a 
+                              href={drill.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="shrink-0 inline-flex items-center gap-1.5 text-[10px] text-blue-400 hover:text-blue-300 font-bold uppercase tracking-widest self-start sm:self-center"
+                            >
+                              <Play size={12} />
+                              Video
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </motion.div>
@@ -1112,15 +1168,49 @@ export function ScheduleDetails() {
                       </div>
                       <div>
                         <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Opponent</label>
-                        <input
-                          type="text"
+                        <OpponentSelector
                           value={editingMatch.opponent || ''}
-                          onChange={(e) => setEditingMatch({ ...editingMatch, opponent: e.target.value })}
-                          className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors"
-                          required
+                          onChange={(value) => setEditingMatch({ ...editingMatch, opponent: value })}
                         />
                       </div>
                     </>
+                  )}
+
+                  {editingMatch.type === 'training' && (
+                    <div className="space-y-4 border border-chalk-white/10 rounded-2xl p-4 bg-pitch-dark/30">
+                      <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Attached Drills</label>
+                      <div className="flex flex-wrap gap-2">
+                        {drills.length === 0 ? (
+                          <p className="text-xs text-chalk-white/40 italic">No drills available. Create them in the Training Library.</p>
+                        ) : (
+                          drills.map(drill => {
+                            const isSelected = editingMatch.drillIds?.includes(drill.id);
+                            return (
+                              <button
+                                key={drill.id}
+                                type="button"
+                                onClick={() => {
+                                  const current = editingMatch.drillIds || [];
+                                  setEditingMatch({
+                                    ...editingMatch,
+                                    drillIds: isSelected 
+                                      ? current.filter((id: string) => id !== drill.id)
+                                      : [...current, drill.id]
+                                  });
+                                }}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                  isSelected 
+                                    ? 'bg-pitch-green text-pitch-dark' 
+                                    : 'bg-chalk-white/5 text-chalk-white/60 hover:bg-chalk-white/10'
+                                }`}
+                              >
+                                {drill.title}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
                   )}
 
                   <div>
@@ -1193,9 +1283,10 @@ export function ScheduleDetails() {
                     </button>
                     <button
                       type="submit"
-                      className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all shadow-[0_0_20px_rgba(22,163,74,0.2)] font-display italic"
+                      disabled={updateMatchLoading || updateMatchSuccess}
+                      className={`flex-1 ${updateMatchSuccess ? 'bg-pitch-green text-pitch-dark' : 'bg-pitch-green hover:bg-pitch-accent text-pitch-dark'} py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(22,163,74,0.2)] font-display italic flex items-center justify-center gap-2`}
                     >
-                      Save Changes
+                      {updateMatchSuccess ? <><Check size={14} strokeWidth={3} /> Saved</> : updateMatchLoading ? 'Saving...' : 'Save Changes'}
                     </button>
                   </div>
                 </form>

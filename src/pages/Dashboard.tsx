@@ -9,6 +9,8 @@ import { Calendar as CalendarIcon, MapPin, Clock, Plus, Trash2, Check, X, HelpCi
 import { motion } from 'motion/react';
 import { triggerNotification } from '../lib/notifications';
 import { ALL_FEATURES } from '../lib/features';
+import { Drill } from './TrainingLibrary';
+import { OpponentSelector } from '../components/OpponentSelector';
 
 interface Match {
   id: string;
@@ -25,6 +27,7 @@ interface Match {
   scoreThem?: number;
   season?: string;
   postponedNote?: string;
+  drillIds?: string[];
 }
 
 interface Availability {
@@ -44,6 +47,7 @@ export function Dashboard() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [availabilities, setAvailabilities] = useState<Record<string, Availability>>({});
   const [players, setPlayers] = useState<any[]>([]);
+  const [drills, setDrills] = useState<Drill[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -106,6 +110,10 @@ export function Dashboard() {
   const [isRecurring, setIsRecurring] = useState(false);
   const [repeatDays, setRepeatDays] = useState(7);
   const [occurrences, setOccurrences] = useState(4);
+  const [addMatchLoading, setAddMatchLoading] = useState(false);
+  const [addMatchSuccess, setAddMatchSuccess] = useState(false);
+  const [updateMatchLoading, setUpdateMatchLoading] = useState(false);
+  const [updateMatchSuccess, setUpdateMatchSuccess] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -149,6 +157,13 @@ export function Dashboard() {
       });
       setMatches(matchesData);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'matches'));
+    
+    // Fetch drills
+    const drillsRef = collection(db, 'drills');
+    const qDrills = query(drillsRef, where('teamId', '==', profile.teamId));
+    const unsubDrills = onSnapshot(qDrills, (snapshot) => {
+      setDrills(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Drill)));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'drills'));
 
     // Fetch players for this parent or all players for coach
     const playersRef = collection(db, 'players');
@@ -163,6 +178,7 @@ export function Dashboard() {
     return () => {
       unsubMatches();
       unsubPlayers();
+      unsubDrills();
     };
   }, [profile?.teamId, profile?.role, profile?.uid]);
 
@@ -189,6 +205,7 @@ export function Dashboard() {
     e.preventDefault();
     if (!profile?.teamId || !isSubscribed) return;
 
+    setAddMatchLoading(true);
     try {
       if (newMatch.type === 'training' && isRecurring) {
         const promises = [];
@@ -220,13 +237,19 @@ export function Dashboard() {
         notificationType: 'matchScheduled'
       });
 
-      setShowAddModal(false);
-      setNewMatch({ type: 'match', matchCategory: 'league', status: 'scheduled', date: new Date().toISOString().slice(0, 16) });
-      setIsRecurring(false);
-      setRepeatDays(7);
-      setOccurrences(4);
+      setAddMatchSuccess(true);
+      setTimeout(() => {
+        setAddMatchSuccess(false);
+        setShowAddModal(false);
+        setNewMatch({ type: 'match', matchCategory: 'league', status: 'scheduled', date: new Date().toISOString().slice(0, 16) });
+        setIsRecurring(false);
+        setRepeatDays(7);
+        setOccurrences(4);
+      }, 1000);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'matches');
+    } finally {
+      setAddMatchLoading(false);
     }
   };
 
@@ -254,13 +277,21 @@ export function Dashboard() {
     e.preventDefault();
     if (!profile?.teamId || !editingMatch) return;
 
+    setUpdateMatchLoading(true);
     try {
       const { id, ...updateData } = editingMatch;
       await setDoc(doc(db, 'matches', id), updateData, { merge: true });
-      setShowEditModal(false);
-      setEditingMatch(null);
+      
+      setUpdateMatchSuccess(true);
+      setTimeout(() => {
+        setUpdateMatchSuccess(false);
+        setShowEditModal(false);
+        setEditingMatch(null);
+      }, 1000);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${editingMatch.id}`);
+    } finally {
+      setUpdateMatchLoading(false);
     }
   };
 
@@ -838,13 +869,9 @@ export function Dashboard() {
                     </div>
                     <div>
                       <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Opponent</label>
-                      <input
-                        type="text"
+                      <OpponentSelector
                         value={newMatch.opponent || ''}
-                        onChange={(e) => setNewMatch({ ...newMatch, opponent: e.target.value })}
-                        className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors placeholder:text-chalk-white/10"
-                        required
-                        placeholder="Team Name"
+                        onChange={(value) => setNewMatch({ ...newMatch, opponent: value })}
                       />
                     </div>
                   </>
@@ -873,6 +900,39 @@ export function Dashboard() {
 
                 {newMatch.type === 'training' && (
                   <div className="space-y-4 border border-chalk-white/10 rounded-2xl p-4 bg-pitch-dark/30">
+                    <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Attached Drills</label>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {drills.length === 0 ? (
+                        <p className="text-xs text-chalk-white/40 italic">No drills available. Create them in the Training Library.</p>
+                      ) : (
+                        drills.map(drill => {
+                          const isSelected = newMatch.drillIds?.includes(drill.id);
+                          return (
+                            <button
+                              key={drill.id}
+                              type="button"
+                              onClick={() => {
+                                const current = newMatch.drillIds || [];
+                                setNewMatch({
+                                  ...newMatch,
+                                  drillIds: isSelected 
+                                    ? current.filter(id => id !== drill.id)
+                                    : [...current, drill.id]
+                                });
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                isSelected 
+                                  ? 'bg-pitch-green text-pitch-dark' 
+                                  : 'bg-chalk-white/5 text-chalk-white/60 hover:bg-chalk-white/10'
+                              }`}
+                            >
+                              {drill.title}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+
                     <label className="flex items-center gap-3 cursor-pointer group">
                       <input
                         type="checkbox"
@@ -944,9 +1004,10 @@ export function Dashboard() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all shadow-[0_0_20px_rgba(22,163,74,0.2)] font-display italic"
+                    disabled={addMatchLoading || addMatchSuccess}
+                    className={`flex-1 ${addMatchSuccess ? 'bg-pitch-green text-pitch-dark' : 'bg-pitch-green hover:bg-pitch-accent text-pitch-dark'} py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(22,163,74,0.2)] font-display italic flex items-center justify-center gap-2`}
                   >
-                    Schedule
+                    {addMatchSuccess ? <><Check size={14} strokeWidth={3} /> Saved</> : addMatchLoading ? 'Saving...' : 'Schedule'}
                   </button>
                 </div>
               </form>
@@ -1003,15 +1064,49 @@ export function Dashboard() {
                     </div>
                     <div>
                       <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Opponent</label>
-                      <input
-                        type="text"
+                      <OpponentSelector
                         value={editingMatch.opponent || ''}
-                        onChange={(e) => setEditingMatch({ ...editingMatch, opponent: e.target.value })}
-                        className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors"
-                        required
+                        onChange={(value) => setEditingMatch({ ...editingMatch, opponent: value })}
                       />
                     </div>
                   </>
+                )}
+
+                {editingMatch.type === 'training' && (
+                  <div className="space-y-4 border border-chalk-white/10 rounded-2xl p-4 bg-pitch-dark/30">
+                    <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Attached Drills</label>
+                    <div className="flex flex-wrap gap-2">
+                      {drills.length === 0 ? (
+                        <p className="text-xs text-chalk-white/40 italic">No drills available. Create them in the Training Library.</p>
+                      ) : (
+                        drills.map(drill => {
+                          const isSelected = editingMatch.drillIds?.includes(drill.id);
+                          return (
+                            <button
+                              key={drill.id}
+                              type="button"
+                              onClick={() => {
+                                const current = editingMatch.drillIds || [];
+                                setEditingMatch({
+                                  ...editingMatch,
+                                  drillIds: isSelected 
+                                    ? current.filter(id => id !== drill.id)
+                                    : [...current, drill.id]
+                                });
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                isSelected 
+                                  ? 'bg-pitch-green text-pitch-dark' 
+                                  : 'bg-chalk-white/5 text-chalk-white/60 hover:bg-chalk-white/10'
+                              }`}
+                            >
+                              {drill.title}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
                 )}
 
                 <div>
@@ -1074,9 +1169,10 @@ export function Dashboard() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all shadow-[0_0_20px_rgba(22,163,74,0.2)] font-display italic"
+                    disabled={updateMatchLoading || updateMatchSuccess}
+                    className={`flex-1 ${updateMatchSuccess ? 'bg-pitch-green text-pitch-dark' : 'bg-pitch-green hover:bg-pitch-accent text-pitch-dark'} py-4 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(22,163,74,0.2)] font-display italic flex items-center justify-center gap-2`}
                   >
-                    Save Changes
+                    {updateMatchSuccess ? <><Check size={14} strokeWidth={3} /> Saved</> : updateMatchLoading ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               </form>

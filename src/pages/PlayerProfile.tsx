@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { doc, collection, query, where, onSnapshot, addDoc, orderBy, updateDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { format, isAfter, startOfDay } from 'date-fns';
-import { ArrowLeft, User, Users, Star, FileText, Activity, CheckCircle, AlertCircle, XCircle, Heart, Camera, Upload, Trophy, Target, TrendingUp, Calendar, Clock, MapPin, Award } from 'lucide-react';
+import { ArrowLeft, User, Users, Star, FileText, Activity, CheckCircle, AlertCircle, XCircle, Heart, Camera, Upload, Trophy, Target, TrendingUp, Calendar, Clock, MapPin, Award, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export function PlayerProfile() {
@@ -22,6 +22,7 @@ export function PlayerProfile() {
   const [newNote, setNewNote] = useState('');
   const [abilityRating, setAbilityRating] = useState<number>(3);
   const [savingNote, setSavingNote] = useState(false);
+  const [noteSuccess, setNoteSuccess] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
@@ -268,8 +269,13 @@ export function PlayerProfile() {
         abilityRating,
         date: new Date().toISOString()
       });
-      setNewNote('');
-      setAbilityRating(3);
+      
+      setNoteSuccess(true);
+      setTimeout(() => {
+        setNoteSuccess(false);
+        setNewNote('');
+        setAbilityRating(3);
+      }, 1000);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'playerNotes');
     } finally {
@@ -839,10 +845,10 @@ export function PlayerProfile() {
                 <div className="flex justify-end">
                   <button
                     type="submit"
-                    disabled={savingNote || !newNote.trim()}
-                    className="bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-slate-50 px-6 py-2 rounded-lg font-bold transition-colors"
+                    disabled={savingNote || noteSuccess || !newNote.trim()}
+                    className={`px-6 py-2 rounded-lg font-bold transition-colors flex items-center gap-2 ${noteSuccess ? 'bg-pitch-green text-pitch-dark' : 'bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-slate-50'}`}
                   >
-                    {savingNote ? 'Saving...' : 'Save Note'}
+                    {noteSuccess ? <><Check size={16} /> Saved</> : savingNote ? 'Saving...' : 'Save Note'}
                   </button>
                 </div>
               </form>

@@ -16,7 +16,8 @@ import {
   Calendar,
   Plus,
   RefreshCw,
-  BellOff
+  BellOff,
+  Check
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, getDoc, getDocs, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -52,6 +53,7 @@ export function Profile() {
   const [teamData, setTeamData] = useState<any>(null);
   const [joinCode, setJoinCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
+  const [joinSuccess, setJoinSuccess] = useState(false);
   const [joinError, setJoinError] = useState('');
   const [showNewSeasonModal, setShowNewSeasonModal] = useState(false);
   const [newSeasonName, setNewSeasonName] = useState('');
@@ -68,7 +70,8 @@ export function Profile() {
       dragAndDropPitch: true,
       enablePayments: true,
       enableLearning: true,
-      enableNotes: true
+      enableNotes: true,
+      enableTraining: true
     },
     notificationSettings: {
       matchScheduled: false,
@@ -109,7 +112,8 @@ export function Profile() {
             dragAndDropPitch: data.features?.dragAndDropPitch ?? true,
             enablePayments: data.features?.enablePayments ?? true,
             enableLearning: data.features?.enableLearning ?? true,
-            enableNotes: data.features?.enableNotes ?? true
+            enableNotes: data.features?.enableNotes ?? true,
+            enableTraining: data.features?.enableTraining ?? true
           },
           notificationSettings: {
             matchScheduled: data.notificationSettings?.matchScheduled ?? false,
@@ -362,7 +366,8 @@ export function Profile() {
           });
           
           setJoinCode('');
-          alert(`Successfully joined ${teamName}!`);
+          setJoinSuccess(true);
+          setTimeout(() => setJoinSuccess(false), 2000);
         } else {
           setJoinError('Invalid team code.');
         }
@@ -386,7 +391,8 @@ export function Profile() {
         });
         
         setJoinCode('');
-        alert(`Successfully joined ${teamData.name}!`);
+        setJoinSuccess(true);
+        setTimeout(() => setJoinSuccess(false), 2000);
       }
     } catch (err) {
       console.error('Error joining team:', err);
@@ -941,6 +947,28 @@ export function Profile() {
                     <div className="relative flex items-center justify-center mt-1">
                       <input
                         type="checkbox"
+                        checked={seasonSettings.features.enableTraining ?? true}
+                        onChange={(e) => setSeasonSettings(prev => ({
+                          ...prev,
+                          features: {
+                            ...prev.features,
+                            enableTraining: e.target.checked
+                          }
+                        }))}
+                        className="peer sr-only"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors">Training Library</p>
+                      <p className="text-xs text-slate-400 mt-1">Enable the training drills library for creating and managing training sessions.</p>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-4 cursor-pointer group">
+                    <div className="relative flex items-center justify-center mt-1">
+                      <input
+                        type="checkbox"
                         checked={seasonSettings.features.enableLearning ?? true}
                         onChange={(e) => setSeasonSettings(prev => ({
                           ...prev,
@@ -1229,10 +1257,12 @@ export function Profile() {
                       />
                       <button
                         type="submit"
-                        disabled={isJoining || !joinCode.trim()}
-                        className="px-6 bg-green-500 hover:bg-green-400 disabled:bg-slate-700 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                        disabled={isJoining || joinSuccess || !joinCode.trim()}
+                        className={`px-6 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 ${joinSuccess ? 'bg-green-500 text-slate-950' : 'bg-green-500 hover:bg-green-400 disabled:bg-slate-700 text-slate-950'}`}
                       >
-                        {isJoining ? (
+                        {joinSuccess ? (
+                          <><Check size={16} strokeWidth={3} /> Joined</>
+                        ) : isJoining ? (
                           <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
                         ) : (
                           'Join'

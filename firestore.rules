@@ -28,12 +28,12 @@ service cloud.firestore {
     function isTeamMember(teamId) {
       return isAuthenticated() && 
              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teamId == teamId;
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('teamId', null) == teamId;
     }
 
     function isCoach(teamId) {
       return isTeamMember(teamId) && 
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'coach';
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', null) == 'coach';
     }
 
     function isParentOfPlayer(playerId) {
@@ -138,7 +138,18 @@ service cloud.firestore {
              (!('coachPotmName' in data) || data.coachPotmName is string) &&
              (!('parentPotmId' in data) || data.parentPotmId is string) &&
              (!('parentPotmName' in data) || data.parentPotmName is string) &&
-             (!('isPotmVotingOpen' in data) || data.isPotmVotingOpen is bool);
+             (!('isPotmVotingOpen' in data) || data.isPotmVotingOpen is bool) &&
+             (!('drillIds' in data) || data.drillIds is list);
+    }
+
+    function isValidDrill(data) {
+      return hasRequiredFields(['teamId', 'title', 'description']) &&
+             data.teamId is string &&
+             data.title is string && data.title.size() > 0 &&
+             data.description is string &&
+             (!('url' in data) || (data.url == null || data.url is string)) &&
+             (!('trainedCount' in data) || data.trainedCount is number) &&
+             (!('trainedDates' in data) || data.trainedDates is list);
     }
 
     function isValidAvailability(data) {
@@ -259,63 +270,77 @@ service cloud.firestore {
     match /teams/{teamId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && (isValidTeam(request.resource.data) || isAdmin());
-      allow update: if (isCoach(teamId) || isAdmin()) && isValidTeam(request.resource.data);
+      allow update: if (isAdmin() || isCoach(teamId)) && isValidTeam(request.resource.data);
+    }
+
+    match /drills/{drillId} {
+      allow read: if isAdmin() || resource.data.teamId == 'system' || isTeamMember(resource.data.teamId);
+      allow create: if isAuthenticated() && isValidDrill(request.resource.data) && (isAdmin() || isCoach(request.resource.data.teamId));
+      allow update: if isAuthenticated() && isValidDrill(request.resource.data) && (isAdmin() || isCoach(resource.data.teamId));
+      allow delete: if isAuthenticated() && (isAdmin() || isCoach(resource.data.teamId));
     }
 
     match /players/{playerId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidPlayerCreate(request.resource.data) && (isCoach(request.resource.data.teamId) || isAdmin());
-      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isCoach(resource.data.teamId) || isParentOfPlayer(playerId) || isJoiningAsParent() || isAdmin());
-      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
+      allow create: if isAuthenticated() && isValidPlayerCreate(request.resource.data) && (isAdmin() || isCoach(request.resource.data.teamId));
+      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isAdmin() || isCoach(resource.data.teamId) || isParentOfPlayer(playerId) || isJoiningAsParent());
+      allow delete: if isAuthenticated() && (isAdmin() || isCoach(resource.data.teamId));
+    }
+
+    match /opponents/{opponentId} {
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
+      allow create: if isAuthenticated() && (isAdmin() || isCoach(request.resource.data.teamId));
+      allow update: if isAuthenticated() && (isAdmin() || isCoach(resource.data.teamId));
+      allow delete: if isAuthenticated() && (isAdmin() || isCoach(resource.data.teamId));
     }
 
     match /matches/{matchId} {
-      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
-      allow create: if isAuthenticated() && isValidMatch(request.resource.data) && (isCoach(request.resource.data.teamId) || isAdmin());
-      allow update: if isAuthenticated() && isValidMatch(request.resource.data) && (isCoach(resource.data.teamId) || isAdmin());
-      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
+      allow create: if isAuthenticated() && isValidMatch(request.resource.data) && (isAdmin() || isCoach(request.resource.data.teamId));
+      allow update: if isAuthenticated() && isValidMatch(request.resource.data) && (isAdmin() || isCoach(resource.data.teamId));
+      allow delete: if isAuthenticated() && (isAdmin() || isCoach(resource.data.teamId));
 
       match /events/{eventId} {
-        allow read: if isTeamMember(get(/databases/$(database)/documents/matches/$(matchId)).data.teamId) || isAdmin();
-        allow create: if isAuthenticated() && isValidMatchEvent(request.resource.data) && (isCoach(get(/databases/$(database)/documents/matches/$(matchId)).data.teamId) || isAdmin());
+        allow read: if isAdmin() || isTeamMember(get(/databases/$(database)/documents/matches/$(matchId)).data.get('teamId', null));
+        allow create: if isAuthenticated() && isValidMatchEvent(request.resource.data) && (isAdmin() || isCoach(get(/databases/$(database)/documents/matches/$(matchId)).data.get('teamId', null)));
       }
     }
 
     match /availabilities/{availabilityId} {
-      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
-      allow write: if isAuthenticated() && isValidAvailability(request.resource.data) && (isCoach(request.resource.data.teamId) || isParentOfPlayer(request.resource.data.playerId));
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
+      allow write: if isAuthenticated() && isValidAvailability(request.resource.data) && (isAdmin() || isCoach(request.resource.data.teamId) || isParentOfPlayer(request.resource.data.playerId));
     }
 
     match /motmVotes/{voteId} {
-      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
       allow create: if isAuthenticated() && isValidMotmVote(request.resource.data);
       allow update: if isOwner(resource.data.parentId) && isValidMotmVote(request.resource.data);
     }
 
     match /attendances/{attendanceId} {
-      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
-      allow write: if isCoach(request.resource.data.teamId) && isValidAttendance(request.resource.data);
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
+      allow write: if (isAdmin() || isCoach(request.resource.data.teamId)) && isValidAttendance(request.resource.data);
     }
 
     match /seasonSummaries/{summaryId} {
-      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
-      allow create: if isCoach(request.resource.data.teamId) || isAdmin();
-      allow update: if isCoach(resource.data.teamId) || isAdmin();
-      allow delete: if isCoach(resource.data.teamId) || isAdmin();
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
+      allow create: if isAdmin() || isCoach(request.resource.data.teamId);
+      allow update: if isAdmin() || isCoach(resource.data.teamId);
+      allow delete: if isAdmin() || isCoach(resource.data.teamId);
     }
 
     match /playerNotes/{noteId} {
-      allow read: if isCoach(resource.data.teamId) || isAdmin();
-      allow write: if isCoach(request.resource.data.teamId) && isValidPlayerNote(request.resource.data);
+      allow read: if isAdmin() || isCoach(resource.data.teamId);
+      allow write: if (isAdmin() || isCoach(request.resource.data.teamId)) && isValidPlayerNote(request.resource.data);
     }
 
     match /notes/{noteId} {
-      allow read: if isCoach(resource.data.teamId) || isAdmin();
-      allow write: if isCoach(request.resource.data.teamId) && isValidNote(request.resource.data);
+      allow read: if isAdmin() || isCoach(resource.data.teamId);
+      allow write: if (isAdmin() || isCoach(request.resource.data.teamId)) && isValidNote(request.resource.data);
     }
 
     match /subscriptions/{subscriptionId} {
-      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow read: if isAdmin() || isOwner(resource.data.userId);
       allow write: if isAdmin();
     }
 
@@ -325,19 +350,19 @@ service cloud.firestore {
     }
 
     match /playerPayments/{paymentId} {
-      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
-      allow write: if (isCoach(request.resource.data.teamId) || isAdmin()) && isValidPlayerPayment(request.resource.data);
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
+      allow write: if (isAdmin() || isCoach(request.resource.data.teamId)) && isValidPlayerPayment(request.resource.data);
     }
 
     match /paymentTransactions/{transactionId} {
-      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
-      allow create: if (isCoach(request.resource.data.teamId) || isAdmin()) && isValidPaymentTransaction(request.resource.data);
-      allow delete: if isCoach(resource.data.teamId) || isAdmin();
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
+      allow create: if (isAdmin() || isCoach(request.resource.data.teamId)) && isValidPaymentTransaction(request.resource.data);
+      allow delete: if isAdmin() || isCoach(resource.data.teamId);
     }
 
     match /monthlySubs/{subId} {
-      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
-      allow write: if (isCoach(request.resource.data.teamId) || isAdmin()) && isValidMonthlySub(request.resource.data);
+      allow read: if isAdmin() || isTeamMember(resource.data.teamId);
+      allow write: if (isAdmin() || isCoach(request.resource.data.teamId)) && isValidMonthlySub(request.resource.data);
     }
   }
 }

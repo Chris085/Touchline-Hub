@@ -7,7 +7,8 @@ import {
   FileText,
   BarChart3,
   UserCheck,
-  Plus
+  Plus,
+  Dumbbell
 } from 'lucide-react';
 
 export interface Feature {
@@ -77,6 +78,15 @@ export const FEATURE_GROUPS: FeatureGroup[] = [
         icon: Users,
         path: '/squad',
         color: 'bg-indigo-500'
+      },
+      {
+        id: 'training',
+        name: 'Training Library',
+        description: 'Manage and create training sessions and drills.',
+        icon: Dumbbell,
+        path: '/training',
+        color: 'bg-emerald-500',
+        coachOnly: true
       },
       {
         id: 'attendance',
