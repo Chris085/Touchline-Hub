@@ -10,7 +10,7 @@ import { motion } from 'motion/react';
 export function PlayerProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, selectedSeason } = useAuth();
   
   const [player, setPlayer] = useState<any>(null);
   const [notes, setNotes] = useState<any[]>([]);
@@ -153,10 +153,15 @@ export function PlayerProfile() {
     };
   }, [id, profile?.teamId, profile?.role, profile?.email, navigate]);
 
+  const filteredMatches = useMemo(() => {
+    if (selectedSeason === 'all') return matches;
+    return matches.filter(m => m.season === selectedSeason);
+  }, [matches, selectedSeason]);
+
   const stats = useMemo(() => {
     if (!player || !id) return null;
     
-    const completedMatches = matches.filter(m => m.status === 'completed' && m.type === 'match');
+    const completedMatches = filteredMatches.filter(m => m.status === 'completed' && m.type === 'match');
     
     let goals = 0;
     let assistsCount = 0;
@@ -210,7 +215,7 @@ export function PlayerProfile() {
     });
 
     // Upcoming availability
-    const upcoming = matches
+    const upcoming = filteredMatches
       .filter(m => m.date && isAfter(new Date(m.date), startOfDay(new Date())))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 5)
@@ -230,7 +235,7 @@ export function PlayerProfile() {
       motmHistory: motmHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
       upcoming
     };
-  }, [id, player, matches, availabilities, attendances]);
+  }, [id, player, filteredMatches, availabilities, attendances]);
 
   const handleSetAvailability = async (matchId: string, status: 'going' | 'not-going' | 'maybe') => {
     if (!profile?.uid || !profile?.teamId || !id) return;
@@ -382,7 +387,7 @@ export function PlayerProfile() {
   const allSessionRecords = new Set([
     ...attendances.map(a => a.matchId),
     ...availabilities.map(a => a.matchId)
-  ]);
+  ].filter(matchId => filteredMatches.some(m => m.id === matchId)));
 
   let presentCount = 0;
   let lateCount = 0;

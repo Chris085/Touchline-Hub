@@ -38,7 +38,7 @@ interface Availability {
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Dashboard() {
-  const { profile, isSubscribed, isAdmin } = useAuth();
+  const { profile, isSubscribed, isAdmin, selectedSeason, setSelectedSeason } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [matches, setMatches] = useState<Match[]>([]);
@@ -48,7 +48,6 @@ export function Dashboard() {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [teamData, setTeamData] = useState<any>(null);
-  const [selectedSeason, setSelectedSeason] = useState<string>('all');
 
   // Filter matches based on selected season
   const filteredMatches = useMemo(() => {
@@ -80,7 +79,6 @@ export function Dashboard() {
       if (teamSnap.exists()) {
         const data = teamSnap.data();
         setTeamData(data);
-        if (data.seasonTag && selectedSeason === 'all') setSelectedSeason(data.seasonTag);
       }
     };
     fetchTeam();
@@ -218,7 +216,8 @@ export function Dashboard() {
         teamId: profile.teamId,
         title: `New ${newMatch.type === 'match' ? 'Match' : 'Training'} Scheduled`,
         body: `${newMatch.type === 'match' ? `vs ${newMatch.opponent}` : 'New training session'} on ${format(new Date(newMatch.date!), 'MMM d, h:mm a')}`,
-        data: { type: 'new_event' }
+        data: { type: 'new_event', url: '/' },
+        notificationType: 'matchScheduled'
       });
 
       setShowAddModal(false);
@@ -345,7 +344,7 @@ export function Dashboard() {
           
           {(teamData?.seasons?.length > 0 || teamData?.seasonTag) && (
             <select
-              value={selectedSeason}
+              value={selectedSeason || 'all'}
               onChange={(e) => setSelectedSeason(e.target.value)}
               className="bg-turf-surface/40 backdrop-blur-md border border-chalk-white/10 rounded-xl px-4 py-2 text-sm font-bold text-chalk-white focus:outline-none focus:border-pitch-green/50 appearance-none font-display italic tracking-wider cursor-pointer hover:bg-turf-surface/60 transition-colors"
               style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2386EFAC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em 1em', paddingRight: '2.5rem' }}

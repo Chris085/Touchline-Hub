@@ -218,7 +218,7 @@ async function startServer() {
 
   // Send Notification Endpoint
   app.post("/api/send-notification", async (req, res) => {
-    const { teamId, title, body, data, recipientIds } = req.body;
+    const { teamId, title, body, data, recipientIds, notificationType } = req.body;
     if (!db) return res.status(500).json({ error: "Database not initialized" });
 
     try {
@@ -227,11 +227,45 @@ async function startServer() {
       if (recipientIds && recipientIds.length > 0) {
         // Send to specific users
         const usersSnapshot = await db.collection("users").where(admin.firestore.FieldPath.documentId(), "in", recipientIds).get();
-        tokens = usersSnapshot.docs.map((doc: any) => doc.data().fcmToken).filter((t: any) => !!t);
+        for (const doc of usersSnapshot.docs) {
+          const userData = doc.data();
+          if (userData.fcmToken) {
+            if (notificationType) {
+              const prefs = userData.notificationPreferences;
+              if (prefs && prefs[notificationType] === true) {
+                tokens.push(userData.fcmToken);
+              }
+            } else {
+              tokens.push(userData.fcmToken);
+            }
+          }
+        }
       } else if (teamId) {
-        // Send to entire team
+        // Check team settings if applicable
+        if (notificationType) {
+          const teamDoc = await db.collection("teams").doc(teamId).get();
+          const teamData = teamDoc.data();
+          if (teamData?.notificationSettings && teamData.notificationSettings[notificationType] === false) {
+            return res.json({ success: true, count: 0, message: "Disabled at team level" });
+          }
+        }
+
+        // Send to entire team based on preferences
         const usersSnapshot = await db.collection("users").where("teamId", "==", teamId).get();
-        tokens = usersSnapshot.docs.map((doc: any) => doc.data().fcmToken).filter((t: any) => !!t);
+        for (const doc of usersSnapshot.docs) {
+           const userData = doc.data();
+           if (userData.fcmToken) {
+              if (notificationType) {
+                 const prefs = userData.notificationPreferences;
+                 // OFF BY DEFAULT: user must explicitly opt in
+                 if (prefs && prefs[notificationType] === true) {
+                   tokens.push(userData.fcmToken);
+                 }
+              } else {
+                 tokens.push(userData.fcmToken);
+              }
+           }
+        }
       }
 
       if (tokens.length > 0) {
@@ -307,7 +341,8 @@ async function startServer() {
                 const parentData = doc.data();
                 if (parentData.fcmToken) {
                     const prefs = parentData.notificationPreferences;
-                    if (!prefs || prefs.attendanceReminder !== false) {
+                    // OFF BY DEFAULT: only send if explicitly opted in
+                    if (prefs && prefs.attendanceReminder === true) {
                         parentTokens.push(parentData.fcmToken);
                     }
                 }
@@ -330,53 +365,8 @@ async function startServer() {
   }, 1000 * 60 * 60); // Every hour
 
   // Notifications Trigger
-  const setupNotificationListeners = () => {
-    if (!db) return;
-
-    db.collection("matches").onSnapshot((snapshot: any) => {
-      snapshot.docChanges().forEach((change: any) => {
-        if (change.type === "added") {
-          const match = change.doc.data();
-          sendTeamNotification(match.teamId, "New Match Scheduled", `New match confirmed: ${match.opponent || 'TBC'}`, 'matchScheduled');
-        }
-        if (change.type === "modified") {
-          const match = change.doc.data();
-          sendTeamNotification(match.teamId, "Schedule Update", `Match schedule update: ${match.opponent || 'TBC'}`, 'matchUpdate');
-        }
-      });
-    });
-  };
-
-  const sendTeamNotification = async (teamId: string, title: string, body: string, type: string) => {
-     // 1. Get team settings
-     const teamDoc = await db.collection("teams").doc(teamId).get();
-     const teamData = teamDoc.data();
-     if (teamData?.notificationSettings && teamData.notificationSettings[type] === false) {
-       console.log(`[Notification] Sending disabled for team ${teamId} and type ${type}`);
-       return;
-     }
-
-     const usersSnapshot = await db.collection("users").where("teamId", "==", teamId).get();
-     
-     // 2. Filter users based on preferences
-     const tokens: string[] = [];
-     for (const doc of usersSnapshot.docs) {
-        const userData = doc.data();
-        if (userData.fcmToken) {
-           const prefs = userData.notificationPreferences;
-           if (!prefs || prefs[type] !== false) {
-             tokens.push(userData.fcmToken);
-           }
-        }
-     }
-     
-     if (tokens.length > 0) {
-       await sendNotification(tokens, title, body);
-     }
-  };
-
-  setupNotificationListeners();
-
+  // Removed setupNotificationListeners() as we now explicitly call triggerNotification from the client
+  // upon creation or modification.
 
   // Validate Coach Code
   app.post("/api/validate-coach-code", async (req, res) => {

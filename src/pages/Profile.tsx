@@ -15,7 +15,8 @@ import {
   UserX,
   Calendar,
   Plus,
-  RefreshCw
+  RefreshCw,
+  BellOff
 } from 'lucide-react';
 import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, getDoc, getDocs, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -70,10 +71,11 @@ export function Profile() {
       enableNotes: true
     },
     notificationSettings: {
-      matchScheduled: true,
-      matchUpdate: true,
-      attendanceReminder: true,
-      trainingReminder: true
+      matchScheduled: false,
+      matchUpdate: false,
+      attendanceReminder: false,
+      trainingReminder: false,
+      liveMatchUpdates: false
     }
   });
   const [isSavingSeason, setIsSavingSeason] = useState(false);
@@ -110,10 +112,11 @@ export function Profile() {
             enableNotes: data.features?.enableNotes ?? true
           },
           notificationSettings: {
-            matchScheduled: data.notificationSettings?.matchScheduled ?? true,
-            matchUpdate: data.notificationSettings?.matchUpdate ?? true,
-            attendanceReminder: data.notificationSettings?.attendanceReminder ?? true,
-            trainingReminder: data.notificationSettings?.trainingReminder ?? true
+            matchScheduled: data.notificationSettings?.matchScheduled ?? false,
+            matchUpdate: data.notificationSettings?.matchUpdate ?? false,
+            attendanceReminder: data.notificationSettings?.attendanceReminder ?? false,
+            trainingReminder: data.notificationSettings?.trainingReminder ?? false,
+            liveMatchUpdates: data.notificationSettings?.liveMatchUpdates ?? false
           }
         });
       }
@@ -981,12 +984,43 @@ export function Profile() {
                   <div className="border-t border-slate-700 pt-6">
                     <h3 className="text-lg font-bold text-slate-50 mb-6">Notification Settings</h3>
                     <div className="space-y-6">
-                        {Object.entries(seasonSettings.notificationSettings).map(([key, value]) => (
+                        {Object.entries({
+                            matchScheduled: false,
+                            matchUpdate: false,
+                            attendanceReminder: false,
+                            trainingReminder: false,
+                            liveMatchUpdates: false,
+                            ...(seasonSettings.notificationSettings || {})
+                        }).map(([key, value]) => {
+                          const info = {
+                            matchScheduled: {
+                              title: 'Match Scheduled',
+                              description: 'Enable to allow notifications when a new match is added to the calendar.'
+                            },
+                            matchUpdate: {
+                              title: 'Match Details Changed',
+                              description: 'Enable to allow alerts if the time or location of an upcoming match is updated.'
+                            },
+                            attendanceReminder: {
+                              title: 'Attendance Reminders',
+                              description: 'Enable to allow reminders for players to mark their attendance before matches and training.'
+                            },
+                            trainingReminder: {
+                              title: 'Training Reminders',
+                              description: 'Enable to allow reminders for upcoming training sessions.'
+                            },
+                            liveMatchUpdates: {
+                              title: 'Live Match Updates',
+                              description: 'Enable to allow real-time score updates, cards, and alerts when a match is live.'
+                            }
+                          }[key] || { title: key.replace(/([A-Z])/g, ' $1').trim(), description: `Enable to send ${key.replace(/([A-Z])/g, ' $1').toLowerCase()} notifications to all team members.` };
+
+                          return (
                           <label key={key} className="flex items-start gap-4 cursor-pointer group">
                             <div className="relative flex items-center justify-center mt-1">
                               <input
                                 type="checkbox"
-                                checked={value}
+                                checked={value as boolean}
                                 onChange={(e) => setSeasonSettings(prev => ({
                                   ...prev,
                                   notificationSettings: {
@@ -999,11 +1033,11 @@ export function Profile() {
                               <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
                             </div>
                             <div>
-                                <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors capitalize">{key.replace(/([A-Z])/g, ' $1')}</p>
-                                <p className="text-xs text-slate-400 mt-1">Enable to send {key.replace(/([A-Z])/g, ' $1').toLowerCase()} notifications to all team members.</p>
+                                <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors capitalize">{info.title}</p>
+                                <p className="text-xs text-slate-400 mt-1">{info.description}</p>
                             </div>
                           </label>
-                        ))}
+                        )})}
                     </div>
                   </div>
 
@@ -1034,40 +1068,85 @@ export function Profile() {
             >
               <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6">
                 <h3 className="text-lg font-bold text-slate-50 mb-6">Notification Preferences</h3>
-                <p className="text-sm text-slate-400 mb-6">Choose which notifications you'd like to opt out of receiving.</p>
+                <p className="text-sm text-slate-400 mb-6">Choose which notifications you'd like to receive.</p>
                 
                 <div className="space-y-6">
-                  {Object.entries(profile?.notificationPreferences || {
-                      matchScheduled: true,
-                      matchUpdate: true,
-                      attendanceReminder: true,
-                      trainingReminder: true
-                  }).map(([key, value]) => (
-                    <label key={key} className="flex items-start gap-4 cursor-pointer group">
-                      <div className="relative flex items-center justify-center mt-1">
-                        <input
-                          type="checkbox"
-                          checked={value}
-                          onChange={(e) => updateProfile({
-                              notificationPreferences: {
-                                  ...(profile?.notificationPreferences || {
-                                      matchScheduled: true,
-                                      matchUpdate: true,
-                                      attendanceReminder: true,
-                                      trainingReminder: true
-                                  }),
-                                  [key]: e.target.checked
-                              }
-                          })}
-                          className="peer sr-only"
-                        />
-                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
-                      </div>
-                      <div>
-                          <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors capitalize">{key.replace(/([A-Z])/g, ' $1')}</p>
-                      </div>
-                    </label>
-                  ))}
+                  {(() => {
+                    const availableNotifications = Object.entries({
+                        matchScheduled: false,
+                        matchUpdate: false,
+                        attendanceReminder: false,
+                        trainingReminder: false,
+                        liveMatchUpdates: false,
+                        ...(profile?.notificationPreferences || {})
+                    }).filter(([key]) => teamData?.notificationSettings ? teamData.notificationSettings[key] !== false : true);
+
+                    if (availableNotifications.length === 0) {
+                      return (
+                        <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-slate-900/50 rounded-2xl border border-dashed border-slate-700/50">
+                          <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
+                            <BellOff className="h-8 w-8 text-slate-500" />
+                          </div>
+                          <h4 className="text-slate-50 font-medium mb-2">No Alerts Available</h4>
+                          <p className="text-sm text-slate-400 max-w-sm">The coach hasn't enabled any alerts for the team yet. When they do, they'll appear here for you to manage.</p>
+                        </div>
+                      );
+                    }
+
+                    return availableNotifications.map(([key, value]) => {
+                      const info = {
+                        matchScheduled: {
+                          title: 'Match Scheduled',
+                          description: 'Get notified when a new match is added to the calendar.'
+                        },
+                        matchUpdate: {
+                          title: 'Match Details Changed',
+                          description: 'Receive alerts if the time or location of an upcoming match is updated.'
+                        },
+                        attendanceReminder: {
+                          title: 'Attendance Reminders',
+                          description: 'Get reminded to mark your attendance before matches and training.'
+                        },
+                        trainingReminder: {
+                          title: 'Training Reminders',
+                          description: 'Receive reminders for upcoming training sessions.'
+                        },
+                        liveMatchUpdates: {
+                          title: 'Live Match Updates',
+                          description: 'Real-time score updates, cards, and alerts when a match is live.'
+                        }
+                      }[key] || { title: key.replace(/([A-Z])/g, ' $1').trim(), description: 'Toggle this notification preference.' };
+
+                      return (
+                      <label key={key} className="flex items-start gap-4 cursor-pointer group">
+                        <div className="relative flex items-center justify-center mt-1">
+                          <input
+                            type="checkbox"
+                            checked={value}
+                            onChange={(e) => updateProfile({
+                                notificationPreferences: {
+                                    ...(profile?.notificationPreferences || {
+                                        matchScheduled: false,
+                                        matchUpdate: false,
+                                        attendanceReminder: false,
+                                        trainingReminder: false,
+                                        liveMatchUpdates: false
+                                    }),
+                                    [key]: e.target.checked
+                                }
+                            })}
+                            className="peer sr-only"
+                          />
+                          <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                        </div>
+                        <div>
+                            <p className="text-sm font-bold text-slate-50 group-hover:text-green-400 transition-colors capitalize">{info.title}</p>
+                            <p className="text-sm text-slate-400 mt-1">{info.description}</p>
+                        </div>
+                      </label>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </motion.div>

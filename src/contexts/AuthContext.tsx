@@ -32,6 +32,7 @@ export interface UserProfile {
     matchUpdate: boolean;
     attendanceReminder: boolean;
     trainingReminder: boolean;
+    liveMatchUpdates: boolean;
   };
 }
 
@@ -40,6 +41,8 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   isSubscribed: boolean;
+  selectedSeason: string | null;
+  setSelectedSeason: (season: string | null) => void;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, name: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -57,6 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [selectedSeason, setSelectedSeason] = useState<string | null>('all');
 
   const isSubscribed = !!(
     profile?.subscriptionStatus === 'active' || 
@@ -119,6 +123,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                       mergedProfile.trialEndDate = teamData.trialEndDate;
                     }
                   }
+                  
+                  if (teamData.seasonTag) {
+                    setSelectedSeason(prev => prev === 'all' ? teamData.seasonTag : prev);
+                  }
                 }
                 
                 // Special check for admin email
@@ -179,6 +187,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Handle FCM Token Registration
   useEffect(() => {
     if (!user || !messaging) return;
+
+    const preferences = profile?.notificationPreferences || {
+      matchScheduled: false,
+      matchUpdate: false,
+      attendanceReminder: false,
+      trainingReminder: false,
+      liveMatchUpdates: false
+    };
+
+    const isOptedIn = Object.values(preferences).some(val => val === true);
+
+    if (!isOptedIn) return;
 
     const requestPermission = async () => {
       try {
@@ -302,6 +322,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading, 
       isSubscribed, 
       isAdmin,
+      selectedSeason,
+      setSelectedSeason,
       signInWithEmail, 
       signUpWithEmail, 
       signInWithGoogle, 

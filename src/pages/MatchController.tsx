@@ -329,8 +329,9 @@ export function MatchController() {
       await triggerNotification({
         teamId: profile.teamId,
         title: 'Match Started! ⚽',
-        body: `Live match vs ${activeMatch.opponent} has started. Follow the live score!`,
-        data: { type: 'match_started', matchId: activeMatch.id }
+        body: `Live match vs ${activeMatch.opponent || 'TBC'} has started. Follow the live score!`,
+        data: { type: 'match_started', matchId: activeMatch.id, url: '/' },
+        notificationType: 'liveMatchUpdates'
       });
 
       setPreMatch(false);
@@ -410,8 +411,9 @@ export function MatchController() {
             await triggerNotification({
               teamId: profile.teamId,
               title: 'Match Finished! 🏁',
-              body: `Final Score: Us ${activeMatch.scoreUs} - ${activeMatch.scoreThem} ${activeMatch.opponent}`,
-              data: { type: 'match_finished', matchId: activeMatch.id, scoreUs: activeMatch.scoreUs, scoreThem: activeMatch.scoreThem }
+              body: `Final Score: Us ${activeMatch.scoreUs || 0} - ${activeMatch.scoreThem || 0} ${activeMatch.opponent || 'TBC'}`,
+              data: { type: 'match_finished', matchId: activeMatch.id, scoreUs: activeMatch.scoreUs || 0, scoreThem: activeMatch.scoreThem || 0, url: '/' },
+              notificationType: 'liveMatchUpdates'
             });
           } else {
             updates.currentHalf = 2;
@@ -489,6 +491,28 @@ export function MatchController() {
         formationId: activeFormationId || "default_formation"
       });
 
+      if (showEventModal === 'goal') {
+        const title = 'Goal! ⚽';
+        const newScore = (activeMatch.scoreUs || 0) + 1;
+        const msg = `${newEvent.playerName || 'Someone'} scored! Current Score: Us ${newScore} - ${activeMatch.scoreThem || 0} ${activeMatch.opponent || 'TBC'}`;
+        
+        triggerNotification({
+          teamId: profile.teamId,
+          title: title,
+          body: msg,
+          data: { type: 'match_update', matchId: activeMatch.id, scoreUs: newScore, scoreThem: activeMatch.scoreThem || 0, url: '/' },
+          notificationType: 'liveMatchUpdates'
+        });
+      } else if (showEventModal === 'red') {
+        triggerNotification({
+          teamId: profile.teamId,
+          title: 'Red Card! 🟥',
+          body: `${newEvent.playerName} has been sent off.`,
+          data: { type: 'match_update', matchId: activeMatch.id, url: '/' },
+          notificationType: 'liveMatchUpdates'
+        });
+      }
+
       setShowEventModal(null);
       setSubPlayerOff(null);
       setGoalScorer(null);
@@ -519,6 +543,15 @@ export function MatchController() {
         playerId: 'unknown',
         minute: Math.floor(timer / 60),
         formationId: activeFormationId || "default_formation"
+      });
+
+      const newScoreThem = (activeMatch.scoreThem || 0) + 1;
+      triggerNotification({
+        teamId: profile.teamId,
+        title: 'Opposition Goal!',
+        body: `${activeMatch.opponent || 'The opposition'} scored. Current Score: Us ${activeMatch.scoreUs || 0} - ${newScoreThem} ${activeMatch.opponent || 'Opponent'}`,
+        data: { type: 'match_update', matchId: activeMatch.id, scoreUs: activeMatch.scoreUs || 0, scoreThem: newScoreThem, url: '/' },
+        notificationType: 'liveMatchUpdates'
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `matches/${activeMatch.id}`);

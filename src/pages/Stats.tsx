@@ -45,7 +45,7 @@ import { FormationAnalyticsModal } from '../components/FormationAnalyticsModal';
 import { InsightViewerModal } from '../components/InsightViewerModal';
 
 export function Stats() {
-  const { profile } = useAuth();
+  const { profile, selectedSeason, setSelectedSeason } = useAuth();
   const navigate = useNavigate();
   const [matches, setMatches] = useState<any[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
@@ -60,9 +60,6 @@ export function Stats() {
   const [selectedInsight, setSelectedInsight] = useState<any | null>(null);
   const [activePieIndex, setActivePieIndex] = useState<number | undefined>(undefined);
   const [teamName, setTeamName] = useState<string>(profile?.joinedTeams?.find(t => t.teamId === profile?.teamId)?.teamName || 'Your Team');
-
-
-  const [seasonId, setSeasonId] = useState<string>('all');
   const [teamData, setTeamData] = useState<any>(null);
 
   useEffect(() => {
@@ -74,7 +71,6 @@ export function Stats() {
         const data = doc.data();
         setTeamData(data);
         if (data.name) setTeamName(data.name);
-        if (data.seasonTag && seasonId === 'all') setSeasonId(data.seasonTag);
       }
     });
 
@@ -129,9 +125,9 @@ export function Stats() {
   }, [profile?.teamId]);
 
   const filteredMatches = useMemo(() => {
-    if (seasonId === 'all') return matches;
-    return matches.filter(m => m.season === seasonId);
-  }, [matches, seasonId]);
+    if (selectedSeason === 'all') return matches;
+    return matches.filter(m => m.season === selectedSeason);
+  }, [matches, selectedSeason]);
 
   const stats = useMemo(() => {
     const completedMatches = filteredMatches.filter(m => m.status === 'completed' && m.type === 'match');
@@ -366,9 +362,9 @@ export function Stats() {
   }, [filteredMatches, players, votes, attendances, availabilities]);
 
   const displaySummaries = useMemo(() => {
-    if (seasonId === 'all') return seasonSummaries;
-    return seasonSummaries.filter(s => s.seasonId === seasonId);
-  }, [seasonSummaries, seasonId]);
+    if (selectedSeason === 'all') return seasonSummaries;
+    return seasonSummaries.filter(s => s.seasonId === selectedSeason);
+  }, [seasonSummaries, selectedSeason]);
 
   if (loading) {
     return (
@@ -390,8 +386,8 @@ export function Stats() {
           
           {(teamData?.seasons?.length > 0 || teamData?.seasonTag) && (
             <select
-              value={seasonId}
-              onChange={(e) => setSeasonId(e.target.value)}
+              value={selectedSeason || 'all'}
+              onChange={(e) => setSelectedSeason(e.target.value)}
               className="bg-turf-surface/40 backdrop-blur-md border border-chalk-white/10 rounded-xl px-4 py-2 text-sm font-bold text-chalk-white focus:outline-none focus:border-pitch-green/50 appearance-none font-display italic tracking-wider cursor-pointer hover:bg-turf-surface/60 transition-colors"
               style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2386EFAC' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.5rem center', backgroundSize: '1em 1em', paddingRight: '2.5rem' }}
             >
@@ -793,7 +789,7 @@ export function Stats() {
       <FormationAnalyticsModal
         isOpen={showAnalyticsModal}
         onClose={() => setShowAnalyticsModal(false)}
-        seasonId={seasonId}
+        seasonId={selectedSeason || 'all'}
         teamId={profile?.teamId || ''}
         matches={filteredMatches}
         players={players}

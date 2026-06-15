@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { doc, collection, query, where, onSnapshot, setDoc, updateDoc, addDoc, serverTimestamp, orderBy, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { triggerNotification } from '../lib/notifications';
 import { format } from 'date-fns';
 import { Calendar as CalendarIcon, MapPin, Clock, ArrowLeft, Check, X, HelpCircle, Navigation, Users, FileText, UserCheck, AlertCircle, Goal, ArrowLeftRight, AlertTriangle, UserMinus, Plus, Trash2, Tag, Pencil, Trophy, Activity, Play, Shield, Edit2, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -352,6 +353,16 @@ export function ScheduleDetails() {
     try {
       const { id, ...updateData } = editingMatch;
       await setDoc(doc(db, 'matches', id), updateData, { merge: true });
+      
+      // Trigger Notification
+      await triggerNotification({
+        teamId: profile.teamId,
+        title: `${editingMatch.type === 'match' ? 'Match' : 'Training'} Details Changed`,
+        body: `Details for ${editingMatch.type === 'match' ? `vs ${editingMatch.opponent}` : 'training session'} have been updated.`,
+        data: { type: 'match_update', eventId: id, url: '/' },
+        notificationType: 'matchUpdate'
+      });
+      
       setShowEditModal(false);
       setEditingMatch(null);
     } catch (error) {

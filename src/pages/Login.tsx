@@ -127,17 +127,6 @@ export function Login() {
         </form>
 
         <div className="mt-8 text-center flex flex-col items-center gap-5">
-          <button
-            type="button"
-            onClick={() => {
-              setIsSignUp(!isSignUp);
-              setError('');
-            }}
-            className="text-xs font-bold text-chalk-white/40 hover:text-pitch-green transition-colors uppercase tracking-widest"
-          >
-            {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-          </button>
-
           <div className="w-full flex items-center gap-4">
             <div className="h-px flex-1 bg-chalk-white/10" />
             <span className="text-[10px] font-bold text-chalk-white/20 uppercase tracking-widest">Or continue with</span>

@@ -4,6 +4,7 @@ export interface NotificationPayload {
   title: string;
   body: string;
   data?: any;
+  notificationType?: string;
 }
 
 export async function triggerNotification(payload: NotificationPayload) {
