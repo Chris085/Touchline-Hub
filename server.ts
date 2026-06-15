@@ -275,11 +275,12 @@ async function startServer() {
         res.json({ success: true, count: 0, message: "No tokens found" });
       }
     } catch (error: any) {
-      console.error("[Notification] Error in /api/send-notification:", error);
       // Gracefully handle permission denied for preview environments where we lack IAM roles
-      if (error.code === 7 || error.message.includes("PERMISSION_DENIED")) {
+      if (error.code === 7 || error.message.includes("PERMISSION_DENIED") || error.code === 'messaging/invalid-argument') {
+        console.log("[Notification] Push notifications mocked in preview environment due to lack of IAM permissions.");
         return res.json({ success: false, error: "Push notifications mocked in preview environment due to lack of IAM permissions" });
       }
+      console.error("[Notification] Error in /api/send-notification:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -363,6 +364,43 @@ async function startServer() {
       console.error("[Background] Error in unconfirmed entries check:", error);
     }
   }, 1000 * 60 * 60); // Every hour
+
+  // AI Endpoints
+  const initGenAI = async () => {
+    if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY environment variable not configured");
+    const { GoogleGenAI } = await import('@google/genai');
+    return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  };
+
+  app.post("/api/generate-match-summary", async (req, res) => {
+    try {
+      const ai = await initGenAI();
+      const { prompt } = req.body;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+      res.json({ text: response.text?.trim() || '' });
+    } catch (error: any) {
+      console.error("AI Generation Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/generate-formation-analysis", async (req, res) => {
+    try {
+      const ai = await initGenAI();
+      const { prompt } = req.body;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+      res.json({ text: response.text?.trim() || '' });
+    } catch (error: any) {
+      console.error("AI Generation Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // Notifications Trigger
   // Removed setupNotificationListeners() as we now explicitly call triggerNotification from the client

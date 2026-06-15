@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Download, Share2, Copy, Check, Goal, Award, Clock, Users, Star, ArrowLeftRight, Sparkles } from 'lucide-react';
 import * as htmlToImage from 'html-to-image';
 import { format } from 'date-fns';
-import { GoogleGenAI } from '@google/genai';
 
 interface MatchSummaryModalProps {
   isOpen: boolean;
@@ -47,15 +46,13 @@ export const MatchSummaryModal: React.FC<MatchSummaryModalProps> = ({
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
   useEffect(() => {
-    if (isOpen && match && process.env.GEMINI_API_KEY && !aiSummary) {
+    if (isOpen && match && !aiSummary) {
       const goals = (match.events || []).filter((e: any) => e.type === 'goal').sort((a: any, b: any) => (parseInt(a.time) || 0) - (parseInt(b.time) || 0));
       const subs = (match.events || []).filter((e: any) => e.type === 'sub').sort((a: any, b: any) => (parseInt(a.time) || 0) - (parseInt(b.time) || 0));
       
       const generateSummary = async () => {
         setIsGeneratingAi(true);
         try {
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-          
           let timeline = '';
           const allEvents = [...goals, ...subs].sort((a: any, b: any) => (parseInt(a.time) || 0) - (parseInt(b.time) || 0));
           allEvents.forEach(e => {
@@ -73,12 +70,15 @@ Match events timeline:
 ${timeline || 'No goals or events recorded.'}
 Make it sound like an encouraging, passionate sports commentator, keeping it strictly to 2 short sentences. Do not use hashtags.`;
           
-          const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: prompt,
+          const response = await fetch('/api/generate-match-summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
           });
-          
-          setAiSummary(response.text?.trim() || '');
+          const data = await response.json();
+          if (data.text) {
+            setAiSummary(data.text);
+          }
         } catch (err) {
            console.error('Failed to generate AI summary', err);
         } finally {

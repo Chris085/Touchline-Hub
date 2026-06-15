@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Sparkles, Save, Check } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
 import { getFormationAnalytics } from '../services/analyticsService';
 import Markdown from 'react-markdown';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -25,7 +24,7 @@ export function FormationAnalyticsModal({ isOpen, onClose, seasonId, teamId, mat
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
-    if (isOpen && seasonId && teamId && !analysis && !isLoading && process.env.GEMINI_API_KEY) {
+    if (isOpen && seasonId && teamId && !analysis && !isLoading) {
       generateAnalysis();
     }
   }, [isOpen, seasonId, teamId]);
@@ -36,8 +35,6 @@ export function FormationAnalyticsModal({ isOpen, onClose, seasonId, teamId, mat
     setIsSaved(false);
     try {
       const analyticsData = await getFormationAnalytics(seasonId, teamId);
-
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
       const prompt = `
 You are an advanced football (soccer) performance analyst.
@@ -117,12 +114,16 @@ CONSTRAINTS:
 - Format result as nice Markdown
       `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
+      const response = await fetch('/api/generate-formation-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
       });
+      
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
 
-      setAnalysis(response.text || 'No analysis generated.');
+      setAnalysis(data.text || 'No analysis generated.');
     } catch (err: any) {
       console.error('Failed to generate analysis:', err);
       setError(err.message || 'Failed to generate analysis.');

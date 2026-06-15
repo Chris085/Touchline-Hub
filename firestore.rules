@@ -23,7 +23,7 @@ service cloud.firestore {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
     function isValidUrl(url) {
-      return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*"));
+      return url == null || url == "" || (url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*")));
     }
     function isTeamMember(teamId) {
       return isAuthenticated() && 
@@ -46,9 +46,11 @@ service cloud.firestore {
       let diff = request.resource.data.diff(resource.data);
       let existingParents = resource.data.get('parentIds', []);
       let newParents = request.resource.data.parentIds;
-      return diff.affectedKeys().hasOnly(['parentIds']) &&
+      let validAddition = newParents.size() == existingParents.size() + 1 && !(request.auth.uid in existingParents);
+      let noChange = newParents.size() == existingParents.size() && request.auth.uid in existingParents;
+      return (diff.affectedKeys().hasOnly(['parentIds']) || diff.affectedKeys().size() == 0) &&
              newParents.hasAll(existingParents) &&
-             newParents.size() == existingParents.size() + 1 &&
+             (validAddition || noChange) &&
              request.auth.uid in newParents &&
              newParents.size() <= 3;
     }
@@ -256,26 +258,26 @@ service cloud.firestore {
 
     match /teams/{teamId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidTeam(request.resource.data);
-      allow update: if isCoach(teamId) && isValidTeam(request.resource.data);
+      allow create: if isAuthenticated() && (isValidTeam(request.resource.data) || isAdmin());
+      allow update: if (isCoach(teamId) || isAdmin()) && isValidTeam(request.resource.data);
     }
 
     match /players/{playerId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidPlayerCreate(request.resource.data) && isCoach(request.resource.data.teamId);
-      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isCoach(resource.data.teamId) || isParentOfPlayer(playerId) || isJoiningAsParent());
-      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow create: if isAuthenticated() && isValidPlayerCreate(request.resource.data) && (isCoach(request.resource.data.teamId) || isAdmin());
+      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isCoach(resource.data.teamId) || isParentOfPlayer(playerId) || isJoiningAsParent() || isAdmin());
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
     }
 
     match /matches/{matchId} {
-      allow read: if isTeamMember(resource.data.teamId);
-      allow create: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(request.resource.data.teamId);
-      allow update: if isAuthenticated() && isValidMatch(request.resource.data) && isCoach(resource.data.teamId);
-      allow delete: if isAuthenticated() && isCoach(resource.data.teamId);
+      allow read: if isTeamMember(resource.data.teamId) || isAdmin();
+      allow create: if isAuthenticated() && isValidMatch(request.resource.data) && (isCoach(request.resource.data.teamId) || isAdmin());
+      allow update: if isAuthenticated() && isValidMatch(request.resource.data) && (isCoach(resource.data.teamId) || isAdmin());
+      allow delete: if isAuthenticated() && (isCoach(resource.data.teamId) || isAdmin());
 
       match /events/{eventId} {
-        allow read: if isTeamMember(get(/databases/$(database)/documents/matches/$(matchId)).data.teamId);
-        allow create: if isAuthenticated() && isValidMatchEvent(request.resource.data) && isCoach(get(/databases/$(database)/documents/matches/$(matchId)).data.teamId);
+        allow read: if isTeamMember(get(/databases/$(database)/documents/matches/$(matchId)).data.teamId) || isAdmin();
+        allow create: if isAuthenticated() && isValidMatchEvent(request.resource.data) && (isCoach(get(/databases/$(database)/documents/matches/$(matchId)).data.teamId) || isAdmin());
       }
     }
 
