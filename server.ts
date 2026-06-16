@@ -435,6 +435,7 @@ async function startServer() {
 
       const updates: any = {
         subscriptionStatus: "active",
+        codeType: codeData.type,
       };
 
       if (codeData.type === 'trial') {

@@ -6,6 +6,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
+  FacebookAuthProvider,
   updateProfile as updateFirebaseAuthProfile,
   signOut as firebaseSignOut 
 } from 'firebase/auth';
@@ -24,6 +25,7 @@ export interface UserProfile {
   joinedTeams?: { teamId: string; role: Role; teamName: string }[];
   subscriptionStatus?: 'active' | 'inactive';
   trialEndDate?: string;
+  codeType?: 'full' | 'trial';
   stripeCustomerId?: string;
   fcmToken?: string;
   dashboardShortcuts?: string[];
@@ -46,6 +48,7 @@ interface AuthContextType {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, name: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
+  signInWithFacebook: () => Promise<void>;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   switchTeam: (teamId: string) => Promise<void>;
@@ -65,7 +68,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isSubscribed = !!(
     profile?.subscriptionStatus === 'active' || 
     user?.email === 'chrisjeal9@gmail.com' ||
-    (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date())
+    (profile?.trialEndDate && new Date(profile.trialEndDate) > new Date()) ||
+    profile?.codeType === 'full'
   );
 
   const isAdmin = !!(
@@ -262,6 +266,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithFacebook = async () => {
+    try {
+      const provider = new FacebookAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Error signing in with Facebook", error);
+      throw error;
+    }
+  };
+
   const signOut = async () => {
     await firebaseSignOut(auth);
   };
@@ -327,6 +341,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInWithEmail, 
       signUpWithEmail, 
       signInWithGoogle, 
+      signInWithFacebook,
       signOut, 
       updateProfile, 
       switchTeam,

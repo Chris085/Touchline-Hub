@@ -1,16 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'motion/react';
-import { LogIn, UserPlus } from 'lucide-react';
+import { LogIn, UserPlus, Smartphone, Download, Facebook } from 'lucide-react';
+import { fetchSignInMethodsForEmail } from 'firebase/auth';
+import { auth } from '../firebase';
 
 export function Login() {
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle } = useAuth();
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithFacebook } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult: any) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('User accepted the PWA install prompt');
+        }
+        setDeferredPrompt(null);
+      });
+    } else {
+      alert("To install the app, tap the Share icon and select 'Add to Home Screen'.");
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,10 +64,44 @@ export function Login() {
       setError('');
       await signInWithGoogle();
     } catch (err: any) {
-      setError(err.message || 'Failed to authenticate');
+      setError(await getErrorMessage(err));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFacebookSignIn = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      await signInWithFacebook();
+    } catch (err: any) {
+      setError(await getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getErrorMessage = async (err: any): Promise<string> => {
+    if (err.code === 'auth/account-exists-with-different-credential') {
+      const email = err.customData?.email;
+      if (email) {
+        try {
+          const methods = await fetchSignInMethodsForEmail(auth, email);
+          const providers = methods.map(m => {
+            if (m === 'google.com') return 'Google';
+            if (m === 'facebook.com') return 'Facebook';
+            if (m === 'password') return 'Email/Password';
+            return m;
+          }).join(' or ');
+          return `You've already signed in with ${providers} for ${email}. Please use that instead.`;
+        } catch (e) {
+          return 'An account already exists with this email address but uses a different sign-in method.';
+        }
+      }
+      return 'An account already exists with this email address but uses a different sign-in method.';
+    }
+    return err.message || 'Failed to authenticate';
   };
 
   return (
@@ -125,6 +185,13 @@ export function Login() {
             {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
           </button>
         </form>
+        <button
+          onClick={handleInstallClick}
+          className="mt-6 flex items-center justify-center gap-2 text-chalk-white/60 hover:text-pitch-green text-xs font-bold uppercase tracking-widest transition-colors font-display w-full"
+        >
+          <Smartphone size={16} />
+          Download App
+        </button>
 
         <div className="mt-8 text-center flex flex-col items-center gap-5">
           <div className="w-full flex items-center gap-4">
@@ -161,6 +228,21 @@ export function Login() {
                   />
                 </svg>
                 <span>Google Account</span>
+              </>
+            )}
+          </button>
+          
+          <button
+            onClick={handleFacebookSignIn}
+            disabled={loading}
+            className="flex items-center justify-center gap-3 px-8 py-3 bg-[#1877F2] hover:bg-[#1877F2]/90 text-white rounded-xl transition-all duration-300 shadow-xl disabled:opacity-50 text-xs font-black uppercase italic font-display w-full"
+          >
+            {loading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                <Facebook className="w-5 h-5" />
+                <span>Facebook Account</span>
               </>
             )}
           </button>

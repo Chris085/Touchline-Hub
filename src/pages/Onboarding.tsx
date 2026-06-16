@@ -47,21 +47,6 @@ export function Onboarding() {
     }
   }, [searchParams]);
 
-  const handleDeleteProfile = async () => {
-    setConfirmModal({
-      isOpen: true,
-      title: 'Reset Profile',
-      message: 'Are you sure you want to delete your profile and start over? This cannot be undone.',
-      onConfirm: async () => {
-        await deleteProfile();
-        setRole(null);
-        setTeamName('');
-        setInviteCode('');
-        setCreatedTeam(null);
-      }
-    });
-  };
-
   const handleCoachSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teamName && !inviteCode) return;
@@ -268,14 +253,6 @@ export function Onboarding() {
         
         <div className="absolute top-4 right-4 flex items-center gap-4 z-20">
           <button
-            onClick={handleDeleteProfile}
-            className="text-chalk-white/40 hover:text-red-400 transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
-            title="Reset Profile"
-          >
-            <UserX size={14} />
-            <span className="hidden sm:inline">Reset Profile</span>
-          </button>
-          <button
             onClick={signOut}
             className="text-chalk-white/40 hover:text-pitch-green transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
             title="Sign Out"
@@ -324,14 +301,6 @@ export function Onboarding() {
       
       <div className="absolute top-4 right-4 flex items-center gap-4 z-20">
         <button
-          onClick={handleDeleteProfile}
-          className="text-chalk-white/40 hover:text-red-400 transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
-          title="Reset Profile"
-        >
-          <UserX size={14} />
-          <span className="hidden sm:inline">Reset Profile</span>
-        </button>
-        <button
           onClick={signOut}
           className="text-chalk-white/40 hover:text-pitch-green transition-colors flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest"
           title="Sign Out"
@@ -356,34 +325,31 @@ export function Onboarding() {
 
         {!role ? (
           <div className="space-y-4">
-            <button
-              onClick={() => setRole('coach')}
-              className="w-full bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white p-5 rounded-2xl border border-chalk-white/5 transition-all flex items-center justify-between group"
-            >
-              <div className="text-left">
-                <div className="text-lg font-display italic uppercase font-black">I'm a Coach</div>
-                <div className="text-xs text-chalk-white/40 font-medium">Create a new team and manage matches</div>
-              </div>
-              <div className="text-pitch-green opacity-0 group-hover:opacity-100 transition-all transform translate-x-[-10px] group-hover:translate-x-0">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              </div>
-            </button>
-            <button
-              onClick={() => setRole('parent')}
-              className="w-full bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white p-5 rounded-2xl border border-chalk-white/5 transition-all flex items-center justify-between group"
-            >
-              <div className="text-left">
-                <div className="text-lg font-display italic uppercase font-black">I'm a Player / Parent</div>
-                <div className="text-xs text-chalk-white/40 font-medium">Join an existing team with a code</div>
-              </div>
-              <div className="text-pitch-green opacity-0 group-hover:opacity-100 transition-all transform translate-x-[-10px] group-hover:translate-x-0">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              </div>
-            </button>
+            <div className="bg-pitch-dark/80 border border-chalk-white/5 rounded-2xl p-6 text-center">
+              <p className="text-sm text-chalk-white font-medium mb-4">
+                Are you a parent or player?
+              </p>
+              <button
+                onClick={() => setRole('parent')}
+                className="w-full bg-pitch-green hover:bg-pitch-accent text-pitch-dark py-4 rounded-xl font-display italic uppercase font-black transition-all flex items-center justify-center gap-2"
+              >
+                Join Team with Code
+              </button>
+            </div>
+            
+            <div className="mt-8 pt-8 border-t border-chalk-white/5 text-center">
+              <p className="text-xs text-chalk-white/40 mb-3">
+                Are you a coach looking to setup a new team?
+              </p>
+              <a 
+                href="https://touchlinehub.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-bold text-pitch-green hover:underline uppercase tracking-widest"
+              >
+                Sign up at touchlinehub.com
+              </a>
+            </div>
           </div>
         ) : role === 'coach' ? (
           <form onSubmit={handleCoachSetup} className="space-y-6">
