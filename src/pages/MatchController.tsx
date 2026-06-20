@@ -43,6 +43,8 @@ export function MatchController() {
   const [goalDescription, setGoalDescription] = useState('');
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [matchNote, setMatchNote] = useState({ content: '', playerIds: [] as string[] });
+  const [draggedPlayer, setDraggedPlayer] = useState<{ id: string; source: 'pitch' | 'bench' } | null>(null);
+  const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -1089,6 +1091,54 @@ export function MatchController() {
           )}
         </div>
 
+        {/* Action Buttons (Moved Above Pitch View & Scaled Down) */}
+        {isCoach && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <button
+              onClick={() => setShowEventModal('goal')}
+              className="bg-green-500 hover:bg-green-400 text-slate-950 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md shadow-green-500/10 font-display italic"
+            >
+              <Goal size={16} />
+              <span>Our Goal</span>
+            </button>
+            <button
+              onClick={handleOpponentGoal}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-50 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 border border-slate-700 font-display italic"
+            >
+              <Goal size={16} className="text-slate-500" />
+              <span>Their Goal</span>
+            </button>
+            <button
+              onClick={() => setShowEventModal('sub')}
+              className="bg-blue-500 hover:bg-blue-400 text-slate-50 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md shadow-blue-500/10 col-span-2 sm:col-span-1 font-display italic"
+            >
+              <ArrowLeftRight size={16} />
+              <span>Substitution</span>
+            </button>
+            <button
+              onClick={() => setShowEventModal('yellow')}
+              className="bg-yellow-500 hover:bg-yellow-400 text-slate-950 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md shadow-yellow-500/10 font-display italic"
+            >
+              <AlertTriangle size={16} />
+              <span>Yellow Card</span>
+            </button>
+            <button
+              onClick={() => setShowEventModal('red')}
+              className="bg-red-500 hover:bg-red-400 text-slate-50 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md shadow-red-500/10 font-display italic"
+            >
+              <UserMinus size={16} />
+              <span>Red Card</span>
+            </button>
+            <button
+              onClick={() => setShowNoteModal(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-50 py-3 px-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 border border-slate-700 font-display italic col-span-2 sm:col-span-1"
+            >
+              <FileText size={16} className="text-green-500" />
+              <span>Match Notes</span>
+            </button>
+          </div>
+        )}
+
         {/* Live Pitch View */}
         {team?.features?.dragAndDropPitch !== false ? (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
@@ -1103,79 +1153,142 @@ export function MatchController() {
         ) : (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
             <div>
-              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-3">On Pitch</h3>
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest">On Pitch</h3>
+                {isCoach && (
+                  <span className="text-[9px] font-black text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded uppercase tracking-widest font-display italic animate-pulse">
+                    Drag / drop to sub
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {pitchPlayersData.map(p => (
-                  <div key={p.id} className="bg-green-500/10 border border-green-500/20 text-green-400 p-3 rounded-xl font-bold text-sm truncate">
-                    {p.name}
-                  </div>
-                ))}
+                {pitchPlayersData.map(p => {
+                  const isDragTarget = dragOverPlayerId === p.id;
+                  const isBeingDragged = draggedPlayer?.id === p.id;
+                  return (
+                    <div 
+                      key={p.id} 
+                      draggable={isCoach}
+                      onDragStart={(e) => {
+                        setDraggedPlayer({ id: p.id, source: 'pitch' });
+                        e.dataTransfer.setData('text/plain', p.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (draggedPlayer && draggedPlayer.source === 'bench') {
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverPlayerId !== p.id) {
+                            setDragOverPlayerId(p.id);
+                          }
+                        } else {
+                          e.dataTransfer.dropEffect = 'none';
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverPlayerId === p.id) {
+                          setDragOverPlayerId(null);
+                        }
+                      }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        setDragOverPlayerId(null);
+                        if (draggedPlayer && draggedPlayer.source === 'bench') {
+                          const playerOnId = draggedPlayer.id;
+                          setDraggedPlayer(null);
+                          await handlePitchSubstitution(p.id, playerOnId);
+                        }
+                      }}
+                      onDragEnd={() => {
+                        setDraggedPlayer(null);
+                        setDragOverPlayerId(null);
+                      }}
+                      className={`p-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all duration-200 select-none ${
+                        isCoach ? 'cursor-grab active:cursor-grabbing' : ''
+                      } ${
+                        isBeingDragged ? 'opacity-35 border border-dashed border-green-500/50 scale-95 bg-green-500/5' : 'bg-green-500/10 border border-green-500/20 text-green-400'
+                      } ${
+                        isDragTarget ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-950 scale-105 bg-green-500/30' : ''
+                      } flex items-center justify-between gap-2 overflow-hidden`}
+                    >
+                      <span className="truncate">{p.name}</span>
+                      {isCoach && (
+                        <span className="text-[9px] font-black tracking-widest text-green-400/50 uppercase">PITCH</span>
+                      )}
+                    </div>
+                  );
+                })}
                 {pitchPlayersData.length === 0 && (
                   <p className="text-slate-500 text-sm italic col-span-full">No players on pitch.</p>
                 )}
               </div>
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-3">Subs Bench</h3>
+              <div className="flex items-center justify-between gap-4 mb-3">
+                <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Subs Bench</h3>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {benchPlayersData.map(p => (
-                  <div key={p.id} className="bg-slate-800 border border-slate-700 text-slate-300 p-3 rounded-xl font-bold text-sm truncate">
-                    {p.name}
-                  </div>
-                ))}
+                {benchPlayersData.map(p => {
+                  const isDragTarget = dragOverPlayerId === p.id;
+                  const isBeingDragged = draggedPlayer?.id === p.id;
+                  return (
+                    <div 
+                      key={p.id} 
+                      draggable={isCoach}
+                      onDragStart={(e) => {
+                        setDraggedPlayer({ id: p.id, source: 'bench' });
+                        e.dataTransfer.setData('text/plain', p.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        if (draggedPlayer && draggedPlayer.source === 'pitch') {
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverPlayerId !== p.id) {
+                            setDragOverPlayerId(p.id);
+                          }
+                        } else {
+                          e.dataTransfer.dropEffect = 'none';
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverPlayerId === p.id) {
+                          setDragOverPlayerId(null);
+                        }
+                      }}
+                      onDrop={async (e) => {
+                        e.preventDefault();
+                        setDragOverPlayerId(null);
+                        if (draggedPlayer && draggedPlayer.source === 'pitch') {
+                          const playerOffId = draggedPlayer.id;
+                          setDraggedPlayer(null);
+                          await handlePitchSubstitution(playerOffId, p.id);
+                        }
+                      }}
+                      onDragEnd={() => {
+                        setDraggedPlayer(null);
+                        setDragOverPlayerId(null);
+                      }}
+                      className={`p-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all duration-200 select-none ${
+                        isCoach ? 'cursor-grab active:cursor-grabbing' : ''
+                      } ${
+                        isBeingDragged ? 'opacity-35 border border-dashed border-slate-600 scale-95 bg-slate-800/10' : 'bg-slate-800 border border-slate-700 text-slate-300'
+                      } ${
+                        isDragTarget ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-950 scale-105 bg-slate-700' : ''
+                      } flex items-center justify-between gap-2 overflow-hidden`}
+                    >
+                      <span className="truncate">{p.name}</span>
+                      {isCoach && (
+                        <span className="text-[9px] font-black tracking-widest text-slate-500 uppercase">BENCH</span>
+                      )}
+                    </div>
+                  );
+                })}
                 {benchPlayersData.length === 0 && (
                   <p className="text-slate-500 text-sm italic col-span-full">No players on bench.</p>
                 )}
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        {isCoach && (
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              onClick={() => setShowEventModal('goal')}
-              className="bg-green-500 hover:bg-green-400 text-slate-950 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-green-500/20"
-            >
-              <Goal size={32} />
-              <span className="text-lg uppercase tracking-wider">Our Goal</span>
-            </button>
-            <button
-              onClick={handleOpponentGoal}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-50 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95"
-            >
-              <Goal size={32} className="text-slate-500" />
-              <span className="text-lg uppercase tracking-wider">Their Goal</span>
-            </button>
-            <button
-              onClick={() => setShowEventModal('sub')}
-              className="col-span-2 bg-blue-500 hover:bg-blue-400 text-slate-50 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-blue-500/20"
-            >
-              <ArrowLeftRight size={32} />
-              <span className="text-lg uppercase tracking-wider">Substitution</span>
-            </button>
-            <button
-              onClick={() => setShowEventModal('yellow')}
-              className="bg-yellow-500 hover:bg-yellow-400 text-slate-950 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-yellow-500/20"
-            >
-              <AlertTriangle size={32} />
-              <span className="text-lg uppercase tracking-wider">Yellow Card</span>
-            </button>
-            <button
-              onClick={() => setShowEventModal('red')}
-              className="bg-red-500 hover:bg-red-400 text-slate-50 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 shadow-lg shadow-red-500/20"
-            >
-              <UserMinus size={32} />
-              <span className="text-lg uppercase tracking-wider">Red Card</span>
-            </button>
-            <button
-              onClick={() => setShowNoteModal(true)}
-              className="col-span-2 bg-slate-800 hover:bg-slate-700 text-slate-50 p-6 rounded-2xl font-bold flex flex-col items-center justify-center gap-3 transition-transform active:scale-95 border border-slate-700"
-            >
-              <FileText size={32} className="text-green-500" />
-              <span className="text-lg uppercase tracking-wider">Match Notes</span>
-            </button>
           </div>
         )}
 

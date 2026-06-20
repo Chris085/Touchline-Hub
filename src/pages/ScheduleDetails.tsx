@@ -102,7 +102,11 @@ export function ScheduleDetails() {
       return;
     }
     
-    const confirmedPlayers = players.filter(p => availabilities[p.id]?.status === 'going');
+    const confirmedPlayers = players.filter(p => {
+      const avail = availabilities[p.id]?.status;
+      const att = attendances[p.id]?.status;
+      return avail === 'going' || att === 'present' || att === 'late';
+    });
     const bench = confirmedPlayers.filter(p => !startingLineup.includes(p.id)).map(p => p.id);
 
     try {
@@ -302,10 +306,11 @@ export function ScheduleDetails() {
     };
   }, [id, profile?.teamId, navigate]);
 
-  const handleSetAvailability = async (playerId: string, status: 'going' | 'not-going' | 'maybe') => {
+  const handleSetAvailability = async (playerId: string, status: 'going' | 'not-going') => {
     if (!profile?.uid || !profile?.teamId || !match?.id) return;
     
     const existing = availabilities[playerId];
+    const existingAtt = attendances[playerId];
 
     try {
       if (existing) {
@@ -319,6 +324,35 @@ export function ScheduleDetails() {
           status
         });
       }
+
+      // Sync corresponding attendance status
+      if (status === 'going') {
+        if (existingAtt) {
+          if (existingAtt.status !== 'present' && existingAtt.status !== 'late') {
+            await setDoc(doc(db, 'attendances', existingAtt.id), { status: 'present' }, { merge: true });
+          }
+        } else {
+          await setDoc(doc(db, 'attendances', `${match.id}_${playerId}`), {
+            matchId: match.id,
+            playerId,
+            teamId: profile.teamId,
+            status: 'present'
+          });
+        }
+      } else if (status === 'not-going') {
+        if (existingAtt) {
+          if (existingAtt.status !== 'absent') {
+            await setDoc(doc(db, 'attendances', existingAtt.id), { status: 'absent' }, { merge: true });
+          }
+        } else {
+          await setDoc(doc(db, 'attendances', `${match.id}_${playerId}`), {
+            matchId: match.id,
+            playerId,
+            teamId: profile.teamId,
+            status: 'absent'
+          });
+        }
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'availabilities');
     }
@@ -328,6 +362,8 @@ export function ScheduleDetails() {
     if (!profile?.uid || !profile?.teamId || !match?.id) return;
     
     const existing = attendances[playerId];
+    const existingAvail = availabilities[playerId];
+    const availabilityStatus = (status === 'present' || status === 'late') ? 'going' : 'not-going';
 
     try {
       if (existing) {
@@ -338,6 +374,19 @@ export function ScheduleDetails() {
           playerId,
           teamId: profile.teamId,
           status
+        });
+      }
+
+      // Automatically sync matching availability in the database
+      if (existingAvail) {
+        await setDoc(doc(db, 'availabilities', existingAvail.id), { status: availabilityStatus, parentId: profile.uid }, { merge: true });
+      } else {
+        await setDoc(doc(db, 'availabilities', `${match.id}_${playerId}`), {
+          matchId: match.id,
+          playerId,
+          parentId: profile.uid,
+          teamId: profile.teamId,
+          status: availabilityStatus
         });
       }
     } catch (error) {
@@ -400,14 +449,30 @@ export function ScheduleDetails() {
 
   if (!match) return null;
 
-  // Group players by status
-  const confirmedPlayers = players.filter(p => availabilities[p.id]?.status === 'going');
-  const notGoingPlayers = players.filter(p => availabilities[p.id]?.status === 'not-going');
-  const maybePlayers = players.filter(p => availabilities[p.id]?.status === 'maybe');
-  const pendingPlayers = players.filter(p => !availabilities[p.id]);
+  // Group players by status based on both RSVP/availability and attendance checks
+  const confirmedPlayers = players.filter(p => {
+    const avail = availabilities[p.id]?.status;
+    const att = attendances[p.id]?.status;
+    return avail === 'going' || att === 'present' || att === 'late';
+  });
+  const notGoingPlayers = players.filter(p => {
+    const avail = availabilities[p.id]?.status;
+    const att = attendances[p.id]?.status;
+    if (att === 'absent') return true;
+    if (att === 'present' || att === 'late') return false;
+    return avail === 'not-going';
+  });
+  const pendingPlayers = players.filter(p => {
+    const isConfirmed = confirmedPlayers.some(cp => cp.id === p.id);
+    const isNotGoing = notGoingPlayers.some(np => np.id === p.id);
+    return !isConfirmed && !isNotGoing;
+  });
 
   const isCoach = profile?.role === 'coach' || isAdmin;
   const myPlayers = players.filter(p => p.parentIds?.includes(profile?.uid));
+
+  const targetLineupSize = Math.min(maxMatchPlayers, confirmedPlayers.length);
+  const isLineupComplete = confirmedPlayers.length > 0 && startingLineup.length === targetLineupSize;
 
   // Calculate Parents' POTM
   const voteCounts = votes.reduce((acc: Record<string, number>, vote) => {
@@ -483,10 +548,6 @@ export function ScheduleDetails() {
             <div className="flex-1 sm:flex-none flex items-center gap-2 text-pitch-green bg-pitch-green/10 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-pitch-green/20 font-display italic">
               <Check size={14} strokeWidth={4} />
               <span>{confirmedPlayers.length} Confirmed</span>
-            </div>
-            <div className="flex-1 sm:flex-none flex items-center gap-2 text-yellow-500 bg-yellow-500/10 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-yellow-500/20 font-display italic">
-              <HelpCircle size={14} strokeWidth={4} />
-              <span>{maybePlayers.length} Maybe</span>
             </div>
             <div className="flex-1 sm:flex-none flex items-center gap-2 text-red-500 bg-red-500/10 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border border-red-500/20 font-display italic">
               <X size={14} strokeWidth={4} />
@@ -706,8 +767,8 @@ export function ScheduleDetails() {
 
           <button
             onClick={handleStartMatch}
-            disabled={confirmedPlayers.length === 0 || match.status === 'postponed'}
-            className="w-full bg-pitch-green hover:bg-pitch-accent disabled:opacity-50 text-pitch-dark py-4 rounded-2xl font-black uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(22,163,74,0.3)] hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3"
+            disabled={!isLineupComplete || match.status === 'postponed'}
+            className="w-full bg-pitch-green hover:bg-pitch-accent disabled:bg-slate-800 disabled:text-chalk-white/20 disabled:border disabled:border-chalk-white/5 disabled:shadow-none disabled:hover:scale-100 disabled:cursor-not-allowed text-pitch-dark py-4 rounded-2xl font-black uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(22,163,74,0.3)] hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3"
           >
             <Play size={20} fill="currentColor" />
             Start Live Match
@@ -804,12 +865,6 @@ export function ScheduleDetails() {
                       className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                     >
                       <Check size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
-                    </button>
-                    <button
-                      onClick={() => handleSetAvailability(player.id, 'maybe')}
-                      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'maybe' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
-                    >
-                      <HelpCircle size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
                     </button>
                     <button
                       onClick={() => handleSetAvailability(player.id, 'not-going')}
@@ -934,14 +989,22 @@ export function ScheduleDetails() {
             <div className="grid gap-3">
               {players.map(player => {
                 const status = attendances[player.id]?.status;
+                const avail = availabilities[player.id]?.status;
                 return (
                   <div key={player.id} className="flex items-center justify-between gap-4 p-4 bg-pitch-dark/40 rounded-2xl border border-chalk-white/5">
-                    <button 
-                      onClick={() => navigate(`/player/${player.id}`)}
-                      className="text-base font-black text-chalk-white hover:text-pitch-green transition-colors text-left flex items-center gap-2 break-words uppercase italic font-display tracking-tight"
-                    >
-                      <span className="break-words">{player.name}</span>
-                    </button>
+                    <div className="flex flex-col text-left">
+                      <button 
+                        onClick={() => navigate(`/player/${player.id}`)}
+                        className="text-base font-black text-chalk-white hover:text-pitch-green transition-colors text-left flex items-center gap-2 break-words uppercase italic font-display tracking-tight"
+                      >
+                        <span className="break-words">{player.name}</span>
+                      </button>
+                      {status === 'late' && (
+                        <span className="text-[10px] font-black text-yellow-500 uppercase tracking-widest italic font-display mt-1">
+                          Late
+                        </span>
+                      )}
+                    </div>
                     <div className="flex gap-1.5 shrink-0">
                       <button
                         onClick={() => handleSetAttendance(player.id, 'present')}
@@ -949,12 +1012,14 @@ export function ScheduleDetails() {
                       >
                         <Check size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
                       </button>
-                      <button
-                        onClick={() => handleSetAttendance(player.id, 'late')}
-                        className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'late' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
-                      >
-                        <AlertCircle size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
-                      </button>
+                      {avail !== 'not-going' && (
+                        <button
+                          onClick={() => handleSetAttendance(player.id, 'late')}
+                          className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'late' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                        >
+                          <AlertCircle size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleSetAttendance(player.id, 'absent')}
                         className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'absent' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
@@ -1048,7 +1113,7 @@ export function ScheduleDetails() {
           )}
         </div>
 
-        {/* Not Going & Maybe */}
+        {/* Not Going / Unavailable */}
         <div className="bg-turf-surface/20 backdrop-blur-md border border-chalk-white/5 rounded-[2rem] p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-[10px] font-black text-red-500 uppercase tracking-widest flex items-center gap-2 font-display italic">
@@ -1060,29 +1125,8 @@ export function ScheduleDetails() {
             </span>
           </div>
           {notGoingPlayers.length > 0 ? (
-            <div className="grid gap-2 mb-8">
-              {notGoingPlayers.map(p => (
-                <div key={p.id} className="text-xs font-black text-chalk-white/80 bg-pitch-dark/40 px-4 py-3 rounded-xl border border-chalk-white/5 uppercase italic font-display tracking-tight">
-                  {p.name}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-[10px] font-black text-chalk-white/20 uppercase tracking-widest italic font-display text-center py-4 mb-8">None.</p>
-          )}
-
-          <div className="flex items-center justify-between mb-6 pt-6 border-t border-chalk-white/5">
-            <h3 className="text-[10px] font-black text-yellow-500 uppercase tracking-widest flex items-center gap-2 font-display italic">
-              <HelpCircle size={16} strokeWidth={4} />
-              Maybe
-            </h3>
-            <span className="bg-yellow-500/10 text-yellow-500 px-2.5 py-1 rounded-lg text-[10px] font-black font-display italic">
-              {maybePlayers.length}
-            </span>
-          </div>
-          {maybePlayers.length > 0 ? (
             <div className="grid gap-2">
-              {maybePlayers.map(p => (
+              {notGoingPlayers.map(p => (
                 <div key={p.id} className="text-xs font-black text-chalk-white/80 bg-pitch-dark/40 px-4 py-3 rounded-xl border border-chalk-white/5 uppercase italic font-display tracking-tight">
                   {p.name}
                 </div>

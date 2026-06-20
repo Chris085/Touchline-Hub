@@ -238,7 +238,7 @@ export function PlayerProfile() {
     };
   }, [id, player, filteredMatches, availabilities, attendances]);
 
-  const handleSetAvailability = async (matchId: string, status: 'going' | 'not-going' | 'maybe') => {
+  const handleSetAvailability = async (matchId: string, status: 'going' | 'not-going') => {
     if (!profile?.uid || !profile?.teamId || !id) return;
 
     try {
@@ -733,15 +733,6 @@ export function PlayerProfile() {
                           <CheckCircle size={14} />
                         </button>
                         <button
-                          onClick={() => handleSetAvailability(m.id, 'maybe')}
-                          className={`w-6 h-6 rounded flex items-center justify-center transition-all ${
-                            m.availability === 'maybe' ? 'bg-yellow-500 text-slate-950' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
-                          }`}
-                          title="Maybe"
-                        >
-                          <AlertCircle size={14} />
-                        </button>
-                        <button
                           onClick={() => handleSetAvailability(m.id, 'not-going')}
                           className={`w-6 h-6 rounded flex items-center justify-center transition-all ${
                             m.availability === 'not-going' ? 'bg-red-500 text-slate-950' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
@@ -754,7 +745,6 @@ export function PlayerProfile() {
                     ) : (
                       <div className={`px-2 py-1 rounded text-[8px] font-black uppercase tracking-widest ${
                         m.availability === 'going' ? 'bg-green-500/20 text-green-500' :
-                        m.availability === 'maybe' ? 'bg-yellow-500/20 text-yellow-500' :
                         m.availability === 'not-going' ? 'bg-red-500/20 text-red-500' :
                         'bg-slate-800 text-slate-500'
                       }`}>

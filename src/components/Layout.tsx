@@ -222,8 +222,19 @@ export function Layout() {
                 {teamData?.badge ? (
                   <img src={teamData.badge} alt={`${teamData.name} Badge`} className="w-8 h-8 rounded-full object-cover border border-slate-700" />
                 ) : (
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center overflow-hidden">
-                    <span className="text-slate-950 font-bold text-lg">TH</span>
+                  <div className="h-8 relative flex flex-col items-center justify-center">
+                    <img 
+                      src="/logo.png" 
+                      alt="TH Logo" 
+                      className="w-auto h-full object-contain" 
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                      }} 
+                    />
+                    <div className="hidden absolute inset-0 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center overflow-hidden">
+                      <span className="text-slate-950 font-bold text-lg">TH</span>
+                    </div>
                   </div>
                 )}
                 <span className="text-xl font-bold tracking-tight text-slate-50 hidden sm:block">
@@ -273,8 +284,19 @@ export function Layout() {
                   {teamData?.badge ? (
                     <img src={teamData.badge} alt={`${teamData.name} Badge`} className="w-8 h-8 rounded-full object-cover border border-slate-700" />
                   ) : (
-                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center overflow-hidden">
-                      <span className="text-slate-950 font-bold text-lg">TH</span>
+                    <div className="h-8 relative flex flex-col items-center justify-center">
+                      <img 
+                        src="/logo.png" 
+                        alt="TH Logo" 
+                        className="w-auto h-full object-contain" 
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                        }} 
+                      />
+                      <div className="hidden absolute inset-0 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center overflow-hidden">
+                        <span className="text-slate-950 font-bold text-lg">TH</span>
+                      </div>
                     </div>
                   )}
                   <span className="font-bold text-slate-50">{teamData?.name || 'Menu'}</span>

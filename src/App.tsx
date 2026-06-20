@@ -26,6 +26,7 @@ import { Profile } from './pages/Profile';
 import { Payments } from './pages/Payments';
 import { Learning } from './pages/Learning';
 import { TrainingLibrary } from './pages/TrainingLibrary';
+import { Terms } from './pages/Terms';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -68,9 +69,10 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={user ? (profile?.role ? <Navigate to="/" replace /> : <Navigate to={`/onboarding${location.search}`} replace />) : <Login />} />
+      <Route path="/login" element={user && profile?.role ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/onboarding" element={user && !profile?.role ? <Onboarding /> : user && profile?.role ? <Navigate to="/" replace /> : <Navigate to={`/login${location.search}`} replace />} />
       <Route path="/upgrade" element={user && profile?.role ? (isSubscribed ? <Navigate to="/" replace /> : <Paywall />) : <Navigate to="/login" replace />} />
+      <Route path="/terms" element={<Terms />} />
       
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />

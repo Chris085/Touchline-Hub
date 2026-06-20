@@ -295,7 +295,7 @@ export function Dashboard() {
     }
   };
 
-  const handleSetAvailability = async (matchId: string, playerId: string, status: 'going' | 'not-going' | 'maybe') => {
+  const handleSetAvailability = async (matchId: string, playerId: string, status: 'going' | 'not-going') => {
     if (!profile?.uid || !profile?.teamId) return;
     
     const existingKey = `${matchId}_${playerId}`;
@@ -779,12 +779,6 @@ export function Dashboard() {
                                         className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                                       >
                                         <Check size={16} strokeWidth={4} />
-                                      </button>
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'maybe'); }}
-                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'maybe' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
-                                      >
-                                        <HelpCircle size={16} strokeWidth={4} />
                                       </button>
                                       <button
                                         onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'not-going'); }}

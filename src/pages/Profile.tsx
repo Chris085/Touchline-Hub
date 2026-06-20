@@ -245,6 +245,28 @@ export function Profile() {
     }
   };
 
+  const handleTransferHeadCoach = async (newHeadCoachId: string, displayName: string) => {
+    if (!profile?.teamId) return;
+    if (!window.confirm(`Are you sure you want to transfer Head Coach ownership to ${displayName || 'this coach'}? You will no longer be the Head Coach.`)) {
+      return;
+    }
+
+    try {
+      const teamRef = doc(db, 'teams', profile.teamId);
+      await updateDoc(teamRef, {
+        coachId: newHeadCoachId
+      });
+      
+      setTeamData((prev: any) => prev ? { ...prev, coachId: newHeadCoachId } : { coachId: newHeadCoachId });
+      
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 3000);
+    } catch (error) {
+      console.error('Error transferring head coach:', error);
+      alert('Failed to transfer head coach ownership. Please try again.');
+    }
+  };
+
   const handleStartNewSeason = async () => {
     if (!profile?.teamId || !newSeasonName) return;
 
@@ -409,7 +431,7 @@ export function Profile() {
   const visibleMembers = teamMembers.filter(m => {
     if (m.uid === profile?.uid) return false; // Don't show self in list
     if (isSubscriptionOwner || isAdmin) return true; // Owner and Admin see everyone
-    if (isCoach) return m.role === 'parent'; // Coach sees parents
+    if (isCoach) return m.role === 'parent' || m.role === 'coach'; // Coach sees parents and coaches
     return false; // Parents see no one by default in this view
   });
 
@@ -433,7 +455,7 @@ export function Profile() {
             <div className="flex flex-wrap justify-center sm:justify-start gap-3 items-center">
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold uppercase tracking-wider border border-slate-700">
                 <Shield size={12} className={isCoach ? "text-green-400" : "text-blue-400"} />
-                {isAdmin ? 'Admin' : profile?.role}
+                {isAdmin ? 'Admin' : (teamData?.coachId === profile?.uid ? 'Head Coach' : profile?.role)}
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold uppercase tracking-wider border border-slate-700">
                 <Mail size={12} className="text-slate-500" />
@@ -688,7 +710,7 @@ export function Profile() {
                         <div className="min-w-0">
                           <p className="font-bold text-slate-50 truncate">{member.displayName || 'Anonymous'}</p>
                           <div className="flex flex-wrap items-center gap-2">
-                            {(isSubscriptionOwner || isAdmin) ? (
+                             {(isSubscriptionOwner || isAdmin) && member.uid !== teamData?.coachId ? (
                               <select
                                 value={member.role}
                                 onChange={(e) => handleChangeRole(member.uid, e.target.value)}
@@ -699,7 +721,9 @@ export function Profile() {
                                 <option value="player">Player</option>
                               </select>
                             ) : (
-                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">{member.role}</span>
+                              <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">
+                                {member.uid === teamData?.coachId ? 'Head Coach' : member.role}
+                              </span>
                             )}
                             <span className="w-1 h-1 bg-slate-700 rounded-full hidden sm:block"></span>
                             <span className="text-[10px] text-slate-500 truncate w-full sm:w-auto">{member.email}</span>
@@ -709,6 +733,11 @@ export function Profile() {
                       
                       <div className="flex items-center justify-between sm:justify-end gap-3 border-t border-slate-800 pt-3 sm:border-none sm:pt-0">
                         <div className="flex items-center gap-2">
+                          {member.uid === teamData?.coachId && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 text-[10px] font-black uppercase tracking-wider animate-pulse">
+                              Head Coach
+                            </span>
+                          )}
                           {member.stripeCustomerId && (
                             <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 text-[10px] font-black uppercase tracking-wider">
                               Owner
@@ -721,7 +750,19 @@ export function Profile() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          {(isSubscriptionOwner || isAdmin) && (
+                          {teamData?.coachId === profile?.uid && member.role === 'coach' && member.uid !== teamData?.coachId && (
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleTransferHeadCoach(member.uid, member.displayName);
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-slate-950 transition-all text-[10px] font-bold uppercase tracking-wider"
+                              title="Transfer Head Coach status to this coach"
+                            >
+                              Make Head Coach
+                            </button>
+                          )}
+                          {(isSubscriptionOwner || isAdmin) && member.uid !== teamData?.coachId && (
                             <button
                               onClick={(e) => {
                                 e.preventDefault();

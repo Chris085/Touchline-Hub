@@ -96,6 +96,20 @@ export function Onboarding() {
         }
 
         const teamDoc = querySnapshot.docs[0];
+
+        // Check if the team already has 3 coaches or managers
+        const coachesQuery = query(
+          collection(db, 'users'),
+          where('teamId', '==', teamDoc.id),
+          where('role', '==', 'coach')
+        );
+        const coachesSnapshot = await getDocs(coachesQuery);
+        if (coachesSnapshot.size >= 3) {
+          setError('This team already has the maximum number of coaches/managers (3).');
+          setLoading(false);
+          return;
+        }
+
         const teamData = teamDoc.data();
         await updateProfile({ 
           role: 'coach', 
@@ -316,8 +330,19 @@ export function Onboarding() {
         className="max-w-md w-full bg-turf-surface/40 backdrop-blur-xl p-8 rounded-[2rem] border border-chalk-white/10 shadow-2xl relative z-10"
       >
         <div className="text-center mb-10">
-          <div className="w-20 h-20 bg-gradient-to-br from-pitch-green to-pitch-accent rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-pitch-green/20 transform -rotate-6 border-2 border-chalk-white/20">
-            <span className="text-pitch-dark font-black text-4xl tracking-tighter font-display italic">TH</span>
+          <div className="w-1/2 mx-auto mb-6 flex items-center justify-center">
+            <img 
+              src="/logo.png" 
+              alt="Touchline Hub Logo" 
+              className="w-full h-auto object-contain drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+            <div className="hidden w-20 h-20 bg-gradient-to-br from-pitch-green to-pitch-accent rounded-2xl flex items-center justify-center shadow-lg shadow-pitch-green/20 transform -rotate-6 border-2 border-chalk-white/20">
+              <span className="text-pitch-dark font-black text-4xl tracking-tighter font-display italic">TH</span>
+            </div>
           </div>
           <h1 className="text-3xl font-display italic uppercase font-black text-chalk-white mb-2 tracking-tight leading-tight">Welcome to<br/>The Touchline Hub</h1>
           <p className="text-chalk-white/60 text-[10px] font-bold uppercase tracking-widest">Let's get you set up.</p>

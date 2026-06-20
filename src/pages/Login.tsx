@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'motion/react';
 import { LogIn, UserPlus, Smartphone, Download, Facebook } from 'lucide-react';
@@ -6,6 +7,7 @@ import { fetchSignInMethodsForEmail } from 'firebase/auth';
 import { auth } from '../firebase';
 
 export function Login() {
+  const navigate = useNavigate();
   const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithFacebook } = useAuth();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -123,10 +125,21 @@ export function Login() {
         className="max-w-md w-full bg-turf-surface/40 backdrop-blur-xl p-8 rounded-[2rem] border border-chalk-white/10 shadow-2xl relative z-10"
       >
         <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-gradient-to-br from-pitch-green to-pitch-accent rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-pitch-green/20 transform -rotate-6 border-2 border-chalk-white/20">
-            <span className="text-pitch-dark font-black text-4xl tracking-tighter font-display italic">TH</span>
+          <div className="w-1/2 mx-auto mb-4 flex items-center justify-center">
+            <img 
+              src="/logo.png" 
+              alt="Touchline Hub Logo" 
+              className="w-full h-auto object-contain drop-shadow-[0_0_15px_rgba(34,197,94,0.3)]"
+              onError={(e) => {
+                // Fallback if logo isn't found
+                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+            <div className="hidden w-20 h-20 bg-gradient-to-br from-pitch-green to-pitch-accent rounded-2xl flex items-center justify-center shadow-lg shadow-pitch-green/20 transform -rotate-6 border-2 border-chalk-white/20">
+              <span className="text-pitch-dark font-black text-4xl tracking-tighter font-display italic">TH</span>
+            </div>
           </div>
-          <h1 className="text-3xl font-display italic uppercase font-black text-chalk-white mb-2 tracking-tight">The Touchline Hub</h1>
           <p className="text-chalk-white/60 text-xs font-medium tracking-wide uppercase">Professional management for youth football.</p>
         </div>
 
@@ -249,7 +262,7 @@ export function Login() {
         </div>
         
         <p className="text-center text-[9px] font-bold text-chalk-white/20 mt-10 uppercase tracking-widest">
-          By continuing, you agree to our Terms and Privacy Policy.
+          By continuing, you agree to our <button onClick={() => navigate('/terms')} className="underline hover:text-chalk-white/40">Terms</button> and Privacy Policy.
         </p>
       </motion.div>
     </div>

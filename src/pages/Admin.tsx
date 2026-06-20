@@ -3,9 +3,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { collection, query, getDocs, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { motion } from 'motion/react';
-import { Plus, Trash2, Copy, Check, Loader2, Key, Database, Eraser } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, Loader2, Key, Database, Eraser, LayoutDashboard, FileText } from 'lucide-react';
 import { seedData, removeAllSeedData } from '../services/seedService';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { AdminOverview } from './AdminOverview';
+import { PromoPosters } from '../components/PromoPosters';
 
 export function Admin() {
   const { profile } = useAuth();
@@ -18,6 +20,7 @@ export function Admin() {
   const [copied, setCopied] = useState<string | null>(null);
   const [codeType, setCodeType] = useState<'full' | 'trial'>('trial');
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
+  const [activeTab, setActiveTab] = useState<'codes' | 'overview' | 'posters'>('overview');
 
   const handleSeedData = async () => {
     if (!profile?.teamId) return;
@@ -130,127 +133,185 @@ export function Admin() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-50">Admin Dashboard</h1>
-          <p className="text-slate-400">Manage coach access codes</p>
+          <p className="text-slate-400">Manage coach access codes and monitor usage</p>
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-          <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1 w-full sm:w-auto">
+      </div>
+
+      <div className="flex gap-4 border-b border-slate-800 pb-2">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`flex items-center gap-2 px-4 py-2 font-bold text-sm tracking-wider uppercase transition-colors relative ${
+            activeTab === 'overview' ? 'text-green-500' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <LayoutDashboard className="w-5 h-5" />
+          Overview
+          {activeTab === 'overview' && (
+            <motion.div layoutId="adminTab" className="absolute -bottom-[9px] left-0 right-0 h-0.5 bg-green-500" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('codes')}
+          className={`flex items-center gap-2 px-4 py-2 font-bold text-sm tracking-wider uppercase transition-colors relative ${
+            activeTab === 'codes' ? 'text-green-500' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Key className="w-5 h-5" />
+          Access Codes
+          {activeTab === 'codes' && (
+            <motion.div layoutId="adminTab" className="absolute -bottom-[9px] left-0 right-0 h-0.5 bg-green-500" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('posters')}
+          className={`flex items-center gap-2 px-4 py-2 font-bold text-sm tracking-wider uppercase transition-colors relative ${
+            activeTab === 'posters' ? 'text-green-500' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <FileText className="w-5 h-5" />
+          Promo Posters
+          {activeTab === 'posters' && (
+            <motion.div layoutId="adminTab" className="absolute -bottom-[9px] left-0 right-0 h-0.5 bg-green-500" />
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'overview' && (
+        <AdminOverview />
+      )}
+
+      {activeTab === 'posters' && (
+        <PromoPosters teamName={profile?.joinedTeams?.[0]?.teamName || "Astley Buckshaw U10s"} currentUserId={profile?.uid} />
+      )}
+
+      {activeTab === 'codes' && (
+        <div className="space-y-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <h2 className="text-xl font-bold text-slate-50">Code Generation</h2>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+              <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1 w-full sm:w-auto">
+                <button
+                  onClick={() => setCodeType('trial')}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                    codeType === 'trial' ? 'bg-green-500 text-slate-950' : 'text-slate-400 hover:text-slate-50'
+                  }`}
+                >
+                  3M Trial
+                </button>
+                <button
+                  onClick={() => setCodeType('full')}
+                  className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                    codeType === 'full' ? 'bg-green-500 text-slate-950' : 'text-slate-400 hover:text-slate-50'
+                  }`}
+                >
+                  Full Access
+                </button>
+              </div>
+              <button
+                onClick={generateCode}
+                disabled={creating}
+                className="bg-green-500 hover:bg-green-400 text-slate-950 px-6 py-3 sm:py-2 rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 w-full sm:w-auto"
+              >
+                {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+                Generate
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <button
-              onClick={() => setCodeType('trial')}
-              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                codeType === 'trial' ? 'bg-green-500 text-slate-950' : 'text-slate-400 hover:text-slate-50'
-              }`}
+              onClick={handleSeedData}
+              disabled={seeding}
+              className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 hover:bg-yellow-500/20 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
             >
-              3M Trial
+              {seeding ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
+              Seed Team Data
             </button>
             <button
-              onClick={() => setCodeType('full')}
-              className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-bold transition-all ${
-                codeType === 'full' ? 'bg-green-500 text-slate-950' : 'text-slate-400 hover:text-slate-50'
-              }`}
+              onClick={() => setConfirmDeleteAll(true)}
+              disabled={removing}
+              className="bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
             >
-              Full Access
+              {removing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Eraser className="w-5 h-5" />}
+              Remove All Data
+            </button>
+            <button
+              onClick={populateDummyData}
+              disabled={populating}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-50 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
+            >
+              {populating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+              Populate Dummy Data
             </button>
           </div>
-          <button
-            onClick={generateCode}
-            disabled={creating}
-            className="bg-green-500 hover:bg-green-400 text-slate-950 px-6 py-3 sm:py-2 rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 w-full sm:w-auto"
-          >
-            {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-            Generate
-          </button>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <button
-          onClick={handleSeedData}
-          disabled={seeding}
-          className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 hover:bg-yellow-500/20 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
-        >
-          {seeding ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
-          Seed Team Data
-        </button>
-        <button
-          onClick={() => setConfirmDeleteAll(true)}
-          disabled={removing}
-          className="bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
-        >
-          {removing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Eraser className="w-5 h-5" />}
-          Remove All Data
-        </button>
-        <button
-          onClick={populateDummyData}
-          disabled={populating}
-          className="bg-slate-800 hover:bg-slate-700 text-slate-50 px-6 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all disabled:opacity-50"
-        >
-          {populating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-          Populate Dummy Data
-        </button>
-      </div>
-
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex items-center gap-2 text-slate-300 font-medium">
-          <Key className="w-4 h-4" />
-          Active & Used Codes
-        </div>
-        <div className="divide-y divide-slate-800">
-          {loading ? (
-            <div className="p-12 flex justify-center">
-              <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="p-4 border-b border-slate-800 bg-slate-800/50 flex items-center gap-2 text-slate-300 font-medium">
+              <Key className="w-4 h-4" />
+              Active & Used Codes
             </div>
-          ) : codes.length === 0 ? (
-            <div className="p-12 text-center text-slate-500 italic">No codes generated yet</div>
-          ) : (
-            codes.map((code) => (
-              <div key={code.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-800/30 transition-colors">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                  <div className="font-mono text-xl font-bold text-green-400 tracking-wider">
-                    {code.code}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                      code.type === 'trial' 
-                        ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' 
-                        : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                    }`}>
-                      {code.type === 'trial' ? '3M Trial' : 'Full Access'}
-                    </span>
-                    {code.isUsed ? (
-                      <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 text-xs font-medium border border-slate-700">
-                        Used by {code.usedByName || code.usedByEmail || code.usedBy?.substring(0, 8) + '...'}
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-xs font-medium border border-green-500/20">
-                        Active
-                      </span>
-                    )}
-                  </div>
+            <div className="divide-y divide-slate-800">
+              {loading ? (
+                <div className="p-12 flex justify-center">
+                  <Loader2 className="w-8 h-8 text-green-500 animate-spin" />
                 </div>
-                <div className="flex items-center justify-end gap-2 border-t border-slate-800/50 sm:border-0 pt-3 sm:pt-0">
-                  <button
-                    onClick={() => copyToClipboard(code.code)}
-                    className="flex-1 sm:flex-none p-2.5 sm:p-2 bg-slate-800 sm:bg-transparent rounded-lg sm:rounded-none flex items-center justify-center text-slate-400 hover:text-slate-50 transition-colors"
-                    title="Copy Code"
-                  >
-                    {copied === code.code ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
-                    <span className="sm:hidden ml-2 text-xs font-bold uppercase">Copy</span>
-                  </button>
-                  <button
-                    onClick={() => deleteCode(code.id)}
-                    className="flex-1 sm:flex-none p-2.5 sm:p-2 bg-slate-800 sm:bg-transparent rounded-lg sm:rounded-none flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
-                    title="Delete Code"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                    <span className="sm:hidden ml-2 text-xs font-bold uppercase">Delete</span>
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
+              ) : codes.length === 0 ? (
+                <div className="p-12 text-center text-slate-500 italic">No codes generated yet</div>
+              ) : (
+                codes.map((code) => (
+                  <div key={code.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-800/30 transition-colors">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                      <div className="font-mono text-xl font-bold text-green-400 tracking-wider">
+                        {code.code}
+                      </div>
+                      <div className="text-xs text-slate-500 mr-2">
+                        {code.createdAt ? new Date(code.createdAt).toLocaleDateString() : 'Unknown'}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                          code.type === 'trial' 
+                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' 
+                            : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                        }`}>
+                          {code.type === 'trial' ? '3M Trial' : 'Full Access'}
+                        </span>
+                        {code.isUsed ? (
+                          <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 text-xs font-medium border border-slate-700">
+                            Used by {code.usedByName || code.usedByEmail || code.usedBy?.substring(0, 8) + '...'}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-xs font-medium border border-green-500/20">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 border-t border-slate-800/50 sm:border-0 pt-3 sm:pt-0">
+                      <button
+                        onClick={() => copyToClipboard(code.code)}
+                        className="flex-1 sm:flex-none p-2.5 sm:p-2 bg-slate-800 sm:bg-transparent rounded-lg sm:rounded-none flex items-center justify-center text-slate-400 hover:text-slate-50 transition-colors"
+                        title="Copy Code"
+                      >
+                        {copied === code.code ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+                        <span className="sm:hidden ml-2 text-xs font-bold uppercase">Copy</span>
+                      </button>
+                      <button
+                        onClick={() => deleteCode(code.id)}
+                        className="flex-1 sm:flex-none p-2.5 sm:p-2 bg-slate-800 sm:bg-transparent rounded-lg sm:rounded-none flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"
+                        title="Delete Code"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                        <span className="sm:hidden ml-2 text-xs font-bold uppercase">Delete</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-      
+      )}
+
       <ConfirmModal
         isOpen={confirmDeleteAll}
         title="Remove All Team Data"

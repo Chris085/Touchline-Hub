@@ -58,7 +58,9 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
              (request.auth.uid == "V45Buf6eA5ggg2JUFShJpj48y2y2" || 
-              request.auth.token.email == "chrisjeal9@gmail.com");
+              (request.auth.token != null && "email" in request.auth.token && request.auth.token.email == "chrisjeal9@gmail.com") ||
+              (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == "chrisjeal9@gmail.com"));
     }
 
     // ===============================================================
@@ -264,13 +266,16 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isOwner(userId) && isValidUser(request.resource.data);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     match /teams/{teamId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && (isValidTeam(request.resource.data) || isAdmin());
       allow update: if (isAdmin() || isCoach(teamId)) && isValidTeam(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /drills/{drillId} {
@@ -283,8 +288,8 @@ service cloud.firestore {
     match /players/{playerId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidPlayerCreate(request.resource.data) && (isAdmin() || isCoach(request.resource.data.teamId));
-      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isAdmin() || isCoach(resource.data.teamId) || isParentOfPlayer(playerId) || isJoiningAsParent());
-      allow delete: if isAuthenticated() && (isAdmin() || isCoach(resource.data.teamId));
+      allow update: if isAuthenticated() && isValidPlayerUpdate(request.resource.data) && (isAdmin() || isCoach(resource.data.get('teamId', '')) || isParentOfPlayer(playerId) || isJoiningAsParent());
+      allow delete: if isAuthenticated() && (isAdmin() || isCoach(resource.data.get('teamId', '')));
     }
 
     match /opponents/{opponentId} {
