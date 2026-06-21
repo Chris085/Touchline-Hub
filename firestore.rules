@@ -82,12 +82,12 @@ service cloud.firestore {
     }
 
     function isValidTeam(data) {
-      return hasRequiredFields(['name', 'code', 'coachId']) &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.code is string && data.code.size() == 6 &&
+      return hasRequiredFields(['name', 'coachId']) &&
+             data.name is string && data.name.size() > 0 &&
              data.coachId is string &&
-             (!('halfDuration' in data) || (data.halfDuration is number && data.halfDuration > 0 && data.halfDuration <= 60)) &&
-             (!('maxMatchPlayers' in data) || (data.maxMatchPlayers is number && data.maxMatchPlayers > 0 && data.maxMatchPlayers <= 30));
+             (!('code' in data) || data.code is string) &&
+             (!('halfDuration' in data) || (data.halfDuration is number && data.halfDuration > 0)) &&
+             (!('maxMatchPlayers' in data) || (data.maxMatchPlayers is number && data.maxMatchPlayers > 0));
     }
 
     function isValidPlayerCreate(data) {
@@ -141,7 +141,8 @@ service cloud.firestore {
              (!('parentPotmId' in data) || data.parentPotmId is string) &&
              (!('parentPotmName' in data) || data.parentPotmName is string) &&
              (!('isPotmVotingOpen' in data) || data.isPotmVotingOpen is bool) &&
-             (!('drillIds' in data) || data.drillIds is list);
+             (!('drillIds' in data) || data.drillIds is list) &&
+              (!('recordingUrl' in data) || data.recordingUrl == null || data.recordingUrl is string);
     }
 
     function isValidDrill(data) {

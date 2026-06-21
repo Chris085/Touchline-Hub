@@ -20,7 +20,7 @@ interface Note {
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Notes() {
-  const { profile } = useAuth();
+  const { profile, isAppReadOnly } = useAuth();
   const [notes, setNotes] = useState<Note[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
   const [matches, setMatches] = useState<any[]>([]);
@@ -180,8 +180,15 @@ export function Notes() {
           <p className="text-slate-400 text-sm">Track performance, tactics, and observations</p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-green-500 hover:bg-green-400 text-slate-950 p-3 rounded-full shadow-lg shadow-green-500/20 transition-all active:scale-95"
+          onClick={() => {
+            if (isAppReadOnly) {
+              alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+              return;
+            }
+            setShowAddModal(true);
+          }}
+          disabled={isAppReadOnly}
+          className={`bg-green-500 hover:bg-green-400 text-slate-950 p-3 rounded-full shadow-lg shadow-green-500/20 transition-all active:scale-95 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-slate-800 text-slate-500 shadow-none' : ''}`}
         >
           <Plus size={24} />
         </button>
@@ -274,8 +281,15 @@ export function Notes() {
                   </div>
                 </div>
                 <button
-                  onClick={() => handleDeleteNote(note.id)}
-                  className="text-slate-600 hover:text-red-400 transition-colors p-1"
+                  onClick={() => {
+                    if (isAppReadOnly) {
+                      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                      return;
+                    }
+                    handleDeleteNote(note.id);
+                  }}
+                  disabled={isAppReadOnly}
+                  className={`text-slate-600 hover:text-red-400 transition-colors p-1 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale' : ''}`}
                 >
                   <Trash2 size={18} />
                 </button>

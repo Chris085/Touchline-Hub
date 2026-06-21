@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import Stripe from "stripe";
+import { Resend } from "resend";
 import admin from "firebase-admin";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
@@ -38,6 +39,42 @@ const initializeDb = async () => {
   }
 };
 await initializeDb();
+
+// Find the user's document for chrisjeal9@gmail.com and set their trialEndDate for 3 months after the current datetime.
+const updateSpecificUserTrial = async () => {
+  if (db) {
+    try {
+      const snapshot = await db.collection("users").where("email", "==", "chrisjeal9@gmail.com").get();
+      if (!snapshot.empty) {
+        const userDoc = snapshot.docs[0];
+        const userId = userDoc.id;
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 3);
+        const trialEndDateStr = endDate.toISOString();
+
+        await db.collection("users").doc(userId).update({
+          trialEndDate: trialEndDateStr,
+          isReadOnly: false
+        });
+        console.log(`[Init] Set trialEndDate for ${userId} (chrisjeal9@gmail.com) to ${trialEndDateStr}`);
+
+        const userData = userDoc.data();
+        if (userData?.teamId) {
+          await db.collection("teams").doc(userData.teamId).update({
+            isReadOnly: false
+          });
+          console.log(`[Init] Automatically unlocked team document ${userData.teamId} for chrisjeal9@gmail.com`);
+        }
+      } else {
+        console.log("[Init] User chrisjeal9@gmail.com not found in 'users' collection during server startup");
+      }
+    } catch (error) {
+      console.error("[Init] Error performing startup update for chrisjeal9@gmail.com:", error);
+    }
+  }
+};
+// Run after db initialization is complete (delayed slightly to ensure Firestore connection is solid)
+setTimeout(updateSpecificUserTrial, 1500);
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "dummy_key");
 
@@ -282,6 +319,47 @@ async function startServer() {
       }
       console.error("[Notification] Error in /api/send-notification:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/contact", async (req, res) => {
+    const { userId, userEmail, userName, message, type } = req.body;
+    if (!db) return res.status(500).json({ error: "Database not initialized" });
+    try {
+      await db.collection("feedback").add({
+        userId: userId || null,
+        userEmail: userEmail || null,
+        userName: userName || null,
+        message,
+        type,
+        createdAt: new Date().toISOString()
+      });
+
+      console.log(`[Email System] Recorded contact us from ${userEmail}: [${type}] ${message}`);
+
+      if (process.env.RESEND_API_KEY) {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: 'onboarding@resend.dev', // Testing domain
+          to: 'chrisjeal9@gmail.com', // Must be verified email when using testing domain
+          subject: `New Pitch App ${type} from ${userName || userEmail || 'Unknown'}`,
+          html: `
+            <h3>New Contact Us Message</h3>
+            <p><strong>Type:</strong> ${type}</p>
+            <p><strong>From:</strong> ${userName || 'N/A'} (${userEmail || 'N/A'})</p>
+            <p><strong>Message:</strong></p>
+            <p>${message}</p>
+          `
+        });
+        console.log(`[Email System] Successfully sent Resend email to chrisjeal9@gmail.com`);
+      } else {
+        console.log(`[Email System] RESEND_API_KEY is not configured. Email was not sent.`);
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error submitting contact form:", err);
+      res.status(500).json({ error: err.message });
     }
   });
 

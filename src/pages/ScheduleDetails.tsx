@@ -16,7 +16,7 @@ import { OpponentSelector } from '../components/OpponentSelector';
 export function ScheduleDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, isAppReadOnly } = useAuth();
   const [match, setMatch] = useState<any>(null);
   const [drills, setDrills] = useState<Drill[]>([]);
   const [players, setPlayers] = useState<any[]>([]);
@@ -51,6 +51,8 @@ export function ScheduleDetails() {
   const [maxMatchPlayers, setMaxMatchPlayers] = useState<number>(16);
   const [updateMatchLoading, setUpdateMatchLoading] = useState(false);
   const [updateMatchSuccess, setUpdateMatchSuccess] = useState(false);
+  const [isAddingRecording, setIsAddingRecording] = useState(false);
+  const [newRecordingUrl, setNewRecordingUrl] = useState('');
 
   useEffect(() => {
     if (!profile?.teamId) return;
@@ -96,6 +98,11 @@ export function ScheduleDetails() {
 
   const handleStartMatch = async () => {
     if (!match || !profile?.teamId) return;
+    
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
     
     if (startingLineup.length > maxMatchPlayers) {
       alert(`You cannot start the match with more than ${maxMatchPlayers} players.`);
@@ -152,6 +159,11 @@ export function ScheduleDetails() {
   const handlePostponeMatch = async () => {
     if (!match?.id) return;
     
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+    
     setConfirmModal({
       isOpen: true,
       title: 'Postpone Match',
@@ -179,6 +191,11 @@ export function ScheduleDetails() {
   const handleAddSessionNote = async () => {
     if (!profile?.uid || !profile?.teamId || !match?.id || !newNote.content.trim()) return;
 
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     try {
       await addDoc(collection(db, 'notes'), {
         teamId: profile.teamId,
@@ -197,6 +214,11 @@ export function ScheduleDetails() {
   };
 
   const handleDeleteNote = async (noteId: string) => {
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     setConfirmModal({
       isOpen: true,
       title: 'Delete Note',
@@ -219,6 +241,19 @@ export function ScheduleDetails() {
         ? prev.playerIds.filter(id => id !== playerId)
         : [...prev.playerIds, playerId]
     }));
+  };
+
+  const handleSaveRecording = async () => {
+    if (!id || !match || !newRecordingUrl.trim()) return;
+    try {
+      await updateDoc(doc(db, 'matches', id), {
+        recordingUrl: newRecordingUrl.trim()
+      });
+      setIsAddingRecording(false);
+      alert('Recording link saved successfully.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'matches');
+    }
   };
 
   useEffect(() => {
@@ -309,6 +344,11 @@ export function ScheduleDetails() {
   const handleSetAvailability = async (playerId: string, status: 'going' | 'not-going') => {
     if (!profile?.uid || !profile?.teamId || !match?.id) return;
     
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     const existing = availabilities[playerId];
     const existingAtt = attendances[playerId];
 
@@ -361,6 +401,11 @@ export function ScheduleDetails() {
   const handleSetAttendance = async (playerId: string, status: 'present' | 'late' | 'absent') => {
     if (!profile?.uid || !profile?.teamId || !match?.id) return;
     
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     const existing = attendances[playerId];
     const existingAvail = availabilities[playerId];
     const availabilityStatus = (status === 'present' || status === 'late') ? 'going' : 'not-going';
@@ -396,6 +441,12 @@ export function ScheduleDetails() {
 
   const handleSaveNotes = async () => {
     if (!match?.id) return;
+
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     setSavingNotes(true);
     try {
       await updateDoc(doc(db, 'matches', match.id), {
@@ -411,6 +462,11 @@ export function ScheduleDetails() {
   const handleUpdateMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.teamId || !editingMatch) return;
+
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
 
     setUpdateMatchLoading(true);
     try {
@@ -601,7 +657,7 @@ export function ScheduleDetails() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 mb-4">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 ${match.type === 'match' && match.recordingUrl ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-6 sm:gap-8 mb-4`}>
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 bg-pitch-dark/50 rounded-2xl flex items-center justify-center shrink-0 border border-chalk-white/5">
                 <Clock size={24} className="text-pitch-green" />
@@ -661,6 +717,88 @@ export function ScheduleDetails() {
                 )}
               </div>
             </div>
+
+            {match.type === 'match' && (match.recordingUrl || isAdmin) && (
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-pitch-dark/50 rounded-2xl flex items-center justify-center shrink-0 border border-chalk-white/5">
+                  <Play size={24} className={match.recordingUrl ? "text-pitch-green" : "text-chalk-white/20"} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-[10px] text-chalk-white/20 font-black uppercase tracking-widest mb-1 font-display italic">Match Recording</p>
+                  
+                  {isAddingRecording ? (
+                    <div className="mt-2 flex gap-2">
+                       <input
+                         type="url"
+                         value={newRecordingUrl}
+                         onChange={(e) => setNewRecordingUrl(e.target.value)}
+                         placeholder="e.g. YouTube link"
+                         className="flex-1 bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-3 py-1.5 text-xs text-chalk-white focus:border-pitch-green focus:outline-none"
+                       />
+                       <button
+                         onClick={handleSaveRecording}
+                         className="bg-pitch-green text-pitch-dark px-3 py-1.5 rounded-xl text-[10px] font-black uppercase hover:bg-pitch-accent transition-colors shrink-0"
+                       >
+                         Save
+                       </button>
+                       <button
+                         onClick={() => setIsAddingRecording(false)}
+                         className="bg-chalk-white/5 text-chalk-white/60 hover:text-chalk-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-colors shrink-0"
+                       >
+                         Cancel
+                       </button>
+                    </div>
+                  ) : match.recordingUrl ? (
+                    <>
+                      <p className="text-xl font-black text-chalk-white uppercase italic font-display tracking-tight leading-tight">Match Video</p>
+                      <div className="mt-2 flex gap-2 items-center">
+                        <a 
+                          href={match.recordingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-[10px] bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 px-3 py-1.5 rounded-xl transition-all font-black uppercase tracking-widest border border-indigo-500/20 font-display italic"
+                        >
+                          <Play size={12} strokeWidth={3} className="fill-current" />
+                          Watch Recording
+                        </a>
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                               if (isAppReadOnly) {
+                                 alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                                 return;
+                               }
+                               setNewRecordingUrl(match.recordingUrl);
+                               setIsAddingRecording(true);
+                            }}
+                            disabled={isAppReadOnly}
+                            className={`text-[10px] bg-chalk-white/5 text-chalk-white/40 hover:bg-chalk-white/10 hover:text-chalk-white px-3 py-1.5 rounded-xl transition-all font-black uppercase tracking-widest border border-chalk-white/10 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        if (isAppReadOnly) {
+                           alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                           return;
+                        }
+                        setNewRecordingUrl('');
+                        setIsAddingRecording(true);
+                      }}
+                      disabled={isAppReadOnly}
+                      className={`mt-2 inline-flex items-center gap-2 text-[10px] bg-chalk-white/5 text-chalk-white/60 hover:bg-chalk-white/10 hover:text-chalk-white px-3 py-1.5 rounded-xl transition-all font-black uppercase tracking-widest border border-chalk-white/10 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <Plus size={12} strokeWidth={3} />
+                      Add YouTube / Video Link
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {match.type === 'training' && match.drillIds?.length > 0 && (
               <div className="flex items-start gap-4">
@@ -767,8 +905,8 @@ export function ScheduleDetails() {
 
           <button
             onClick={handleStartMatch}
-            disabled={!isLineupComplete || match.status === 'postponed'}
-            className="w-full bg-pitch-green hover:bg-pitch-accent disabled:bg-slate-800 disabled:text-chalk-white/20 disabled:border disabled:border-chalk-white/5 disabled:shadow-none disabled:hover:scale-100 disabled:cursor-not-allowed text-pitch-dark py-4 rounded-2xl font-black uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(22,163,74,0.3)] hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3"
+            disabled={!isLineupComplete || match.status === 'postponed' || isAppReadOnly}
+            className={`w-full bg-pitch-green hover:bg-pitch-accent disabled:bg-slate-800 disabled:text-chalk-white/20 disabled:border disabled:border-chalk-white/5 disabled:shadow-none disabled:hover:scale-100 disabled:cursor-not-allowed text-pitch-dark py-4 rounded-2xl font-black uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(22,163,74,0.3)] hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-slate-800 text-chalk-white/20' : ''}`}
           >
             <Play size={20} fill="currentColor" />
             Start Live Match
@@ -776,8 +914,8 @@ export function ScheduleDetails() {
 
           <button
             onClick={() => navigate(`/live?matchId=${match.id}`)}
-            disabled={match.status === 'postponed'}
-            className="w-full mt-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-50 py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 border border-slate-700"
+            disabled={match.status === 'postponed' || isAppReadOnly}
+            className={`w-full mt-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-50 py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 border border-slate-700 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-slate-800 text-chalk-white/20' : ''}`}
           >
             <Edit2 size={20} />
             Manual Entry / Edit Data
@@ -786,8 +924,8 @@ export function ScheduleDetails() {
           {match.status !== 'postponed' && (
             <button
               onClick={handlePostponeMatch}
-              disabled={isPostponing}
-              className="w-full mt-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 border border-red-500/20"
+              disabled={isPostponing || isAppReadOnly}
+              className={`w-full mt-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 py-4 rounded-2xl font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] font-display italic flex items-center justify-center gap-3 border border-red-500/20 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale' : ''}`}
             >
               <Clock size={20} />
               {isPostponing ? 'Postponing...' : 'Postpone Match'}
@@ -862,13 +1000,15 @@ export function ScheduleDetails() {
                   <div className="flex gap-1.5 shrink-0">
                     <button
                       onClick={() => handleSetAvailability(player.id, 'going')}
-                      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                      disabled={isAppReadOnly}
+                      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-pitch-dark/50 text-chalk-white/10' : status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                     >
                       <Check size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
                     </button>
                     <button
                       onClick={() => handleSetAvailability(player.id, 'not-going')}
-                      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'not-going' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                      disabled={isAppReadOnly}
+                      className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-pitch-dark/50 text-chalk-white/10' : status === 'not-going' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                     >
                       <X size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
                     </button>
@@ -895,8 +1035,15 @@ export function ScheduleDetails() {
                 Session Observations
               </h2>
               <button
-                onClick={() => setShowNoteModal(true)}
-                className="bg-pitch-green hover:bg-pitch-accent text-pitch-dark px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(22,163,74,0.3)] font-display italic w-full sm:w-auto shrink-0"
+                onClick={() => {
+                  if (isAppReadOnly) {
+                    alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                    return;
+                  }
+                  setShowNoteModal(true);
+                }}
+                disabled={isAppReadOnly}
+                className={`bg-pitch-green hover:bg-pitch-accent text-pitch-dark px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(22,163,74,0.3)] font-display italic w-full sm:w-auto shrink-0 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-slate-705 text-chalk-white/40' : ''}`}
               >
                 <Plus size={16} strokeWidth={3} />
                 ADD NOTE
@@ -916,8 +1063,15 @@ export function ScheduleDetails() {
                         {note.createdAt?.toDate ? format(note.createdAt.toDate(), 'MMM d, HH:mm') : 'Just now'}
                       </p>
                       <button
-                        onClick={() => handleDeleteNote(note.id)}
-                        className="text-chalk-white/10 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                        onClick={() => {
+                          if (isAppReadOnly) {
+                            alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                            return;
+                          }
+                          handleDeleteNote(note.id);
+                        }}
+                        disabled={isAppReadOnly}
+                        className={`text-chalk-white/10 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 ${isAppReadOnly ? 'cursor-not-allowed hidden' : ''}`}
                       >
                         <Trash2 size={14} strokeWidth={3} />
                       </button>
@@ -962,9 +1116,15 @@ export function ScheduleDetails() {
                 />
                 <div className="flex justify-end">
                   <button
-                    onClick={handleSaveNotes}
-                    disabled={savingNotes}
-                    className="bg-pitch-green hover:bg-pitch-accent disabled:opacity-50 text-pitch-dark px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(22,163,74,0.3)] font-display italic"
+                    onClick={() => {
+                      if (isAppReadOnly) {
+                        alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                        return;
+                      }
+                      handleSaveNotes();
+                    }}
+                    disabled={savingNotes || isAppReadOnly}
+                    className={`bg-pitch-green hover:bg-pitch-accent disabled:opacity-50 text-pitch-dark px-8 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(22,163,74,0.3)] font-display italic ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale' : ''}`}
                   >
                     {savingNotes ? 'Saving...' : 'Save Plan'}
                   </button>
@@ -1007,22 +1167,43 @@ export function ScheduleDetails() {
                     </div>
                     <div className="flex gap-1.5 shrink-0">
                       <button
-                        onClick={() => handleSetAttendance(player.id, 'present')}
-                        className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'present' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                        onClick={() => {
+                          if (isAppReadOnly) {
+                            alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                            return;
+                          }
+                          handleSetAttendance(player.id, 'present');
+                        }}
+                        disabled={isAppReadOnly}
+                        className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-pitch-dark/50 text-chalk-white/10' : status === 'present' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                       >
                         <Check size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
                       </button>
                       {avail !== 'not-going' && (
                         <button
-                          onClick={() => handleSetAttendance(player.id, 'late')}
-                          className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'late' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                          onClick={() => {
+                            if (isAppReadOnly) {
+                              alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                              return;
+                            }
+                            handleSetAttendance(player.id, 'late');
+                          }}
+                          disabled={isAppReadOnly}
+                          className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-pitch-dark/50 text-chalk-white/10' : status === 'late' ? 'bg-yellow-500 text-pitch-dark shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                         >
                           <AlertCircle size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
                         </button>
                       )}
                       <button
-                        onClick={() => handleSetAttendance(player.id, 'absent')}
-                        className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${status === 'absent' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                        onClick={() => {
+                          if (isAppReadOnly) {
+                            alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                            return;
+                          }
+                          handleSetAttendance(player.id, 'absent');
+                        }}
+                        disabled={isAppReadOnly}
+                        className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-pitch-dark/50 text-chalk-white/10' : status === 'absent' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                       >
                         <X size={20} strokeWidth={4} className="scale-75 sm:scale-100" />
                       </button>
@@ -1313,6 +1494,19 @@ export function ScheduleDetails() {
                       placeholder="e.g. SW1A 1AA"
                     />
                   </div>
+
+                  {editingMatch.type === 'match' && (
+                    <div>
+                      <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Match Recording Link (Optional)</label>
+                      <input
+                        type="url"
+                        value={editingMatch.recordingUrl || ''}
+                        onChange={(e) => setEditingMatch({ ...editingMatch, recordingUrl: e.target.value })}
+                        className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors"
+                        placeholder="e.g. YouTube, Hudl or Veo link"
+                      />
+                    </div>
+                  )}
 
                   <div className="flex gap-3 pt-4">
                     <button

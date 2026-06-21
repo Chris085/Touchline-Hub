@@ -5,7 +5,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { BulkAddModal } from '../components/BulkAddModal';
 import { format } from 'date-fns';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Calendar as CalendarIcon, MapPin, Clock, Plus, Trash2, Check, X, HelpCircle, ChevronRight, ChevronDown, ChevronUp, Pencil, Users, Trophy, Activity, LayoutGrid, Zap, BarChart3, MoreVertical, UserCheck, ArrowRight } from 'lucide-react';
+import { Calendar as CalendarIcon, MapPin, Clock, Plus, Trash2, Check, X, HelpCircle, ChevronRight, ChevronDown, ChevronUp, Pencil, Users, Trophy, Activity, LayoutGrid, Zap, BarChart3, MoreVertical, UserCheck, ArrowRight, Play } from 'lucide-react';
 import { motion } from 'motion/react';
 import { triggerNotification } from '../lib/notifications';
 import { ALL_FEATURES } from '../lib/features';
@@ -28,6 +28,7 @@ interface Match {
   season?: string;
   postponedNote?: string;
   drillIds?: string[];
+  recordingUrl?: string;
 }
 
 interface Availability {
@@ -41,7 +42,7 @@ interface Availability {
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Dashboard() {
-  const { profile, isSubscribed, isAdmin, selectedSeason, setSelectedSeason } = useAuth();
+  const { profile, isSubscribed, isAdmin, selectedSeason, setSelectedSeason, isAppReadOnly } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [matches, setMatches] = useState<Match[]>([]);
@@ -105,7 +106,8 @@ export function Dashboard() {
     matchCategory: 'league',
     status: 'scheduled',
     date: new Date().toISOString().slice(0, 16),
-    meetTime: ''
+    meetTime: '',
+    recordingUrl: ''
   });
   const [isRecurring, setIsRecurring] = useState(false);
   const [repeatDays, setRepeatDays] = useState(7);
@@ -205,6 +207,11 @@ export function Dashboard() {
     e.preventDefault();
     if (!profile?.teamId || !isSubscribed) return;
 
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     setAddMatchLoading(true);
     try {
       if (newMatch.type === 'training' && isRecurring) {
@@ -241,7 +248,7 @@ export function Dashboard() {
       setTimeout(() => {
         setAddMatchSuccess(false);
         setShowAddModal(false);
-        setNewMatch({ type: 'match', matchCategory: 'league', status: 'scheduled', date: new Date().toISOString().slice(0, 16) });
+        setNewMatch({ type: 'match', matchCategory: 'league', status: 'scheduled', date: new Date().toISOString().slice(0, 16), recordingUrl: '' });
         setIsRecurring(false);
         setRepeatDays(7);
         setOccurrences(4);
@@ -254,6 +261,11 @@ export function Dashboard() {
   };
 
   const handleDeleteMatch = async (matchId: string) => {
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     setConfirmModal({
       isOpen: true,
       title: 'Delete Event',
@@ -277,6 +289,11 @@ export function Dashboard() {
     e.preventDefault();
     if (!profile?.teamId || !editingMatch) return;
 
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     setUpdateMatchLoading(true);
     try {
       const { id, ...updateData } = editingMatch;
@@ -297,6 +314,11 @@ export function Dashboard() {
 
   const handleSetAvailability = async (matchId: string, playerId: string, status: 'going' | 'not-going') => {
     if (!profile?.uid || !profile?.teamId) return;
+
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
     
     const existingKey = `${matchId}_${playerId}`;
     const existing = availabilities[existingKey];
@@ -580,28 +602,38 @@ export function Dashboard() {
             <div className="hidden sm:flex gap-2">
               <button 
                 onClick={() => {
+                  if (isAppReadOnly) {
+                    alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                    return;
+                  }
                   if (!isSubscribed) {
                     navigate('/upgrade');
                     return;
                   }
                   setShowBulkAddModal(true);
                 }}
-                className={`p-2.5 ${isSubscribed ? 'bg-blue-500 shadow-blue-500/30' : 'bg-slate-700 shadow-none'} text-slate-50 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.3)] hover:scale-105 active:scale-95 transition-all flex items-center gap-2 px-4`}
-                title={isSubscribed ? "Bulk Add Results" : "Upgrade to Add"}
+                disabled={isAppReadOnly}
+                className={`p-2.5 ${isAppReadOnly ? 'bg-slate-700/50 shadow-none opacity-50 cursor-not-allowed filter grayscale' : isSubscribed ? 'bg-blue-500 shadow-blue-500/30 hover:scale-105 active:scale-95' : 'bg-slate-700 shadow-none'} text-slate-50 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all flex items-center gap-2 px-4`}
+                title={isAppReadOnly ? "Read-Only Mode" : isSubscribed ? "Bulk Add Results" : "Upgrade to Add"}
               >
                 <Trophy size={18} strokeWidth={3} />
                 <span className="text-[10px] font-black uppercase tracking-widest font-display italic">Bulk Add</span>
               </button>
               <button 
                 onClick={() => {
+                  if (isAppReadOnly) {
+                    alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                    return;
+                  }
                   if (!isSubscribed) {
                     navigate('/upgrade');
                     return;
                   }
                   setShowAddModal(true);
                 }}
-                className={`p-2.5 ${isSubscribed ? 'bg-pitch-green shadow-pitch-green/30' : 'bg-slate-700 shadow-none'} text-pitch-dark rounded-xl shadow-[0_0_20px_rgba(22,163,74,0.3)] hover:scale-105 active:scale-95 transition-all`}
-                title={isSubscribed ? "Add Entry" : "Upgrade to Add"}
+                disabled={isAppReadOnly}
+                className={`p-2.5 ${isAppReadOnly ? 'bg-slate-700/50 shadow-none opacity-50 cursor-not-allowed filter grayscale' : isSubscribed ? 'bg-pitch-green shadow-pitch-green/30 hover:scale-105 active:scale-95' : 'bg-slate-700 shadow-none'} text-pitch-dark rounded-xl shadow-[0_0_20px_rgba(22,163,74,0.3)] transition-all`}
+                title={isAppReadOnly ? "Read-Only Mode" : isSubscribed ? "Add Entry" : "Upgrade to Add"}
               >
                 {isSubscribed ? <Plus size={20} strokeWidth={3} /> : <Zap size={18} className="text-chalk-white/60" />}
               </button>
@@ -610,8 +642,15 @@ export function Dashboard() {
             {/* Mobile Burger Menu */}
             <div className="sm:hidden relative" ref={menuRef}>
               <button 
-                onClick={() => setShowMenu(!showMenu)}
-                className="p-2.5 bg-pitch-dark/50 border border-chalk-white/10 rounded-xl text-chalk-white"
+                onClick={() => {
+                  if (isAppReadOnly) {
+                    alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                    return;
+                  }
+                  setShowMenu(!showMenu);
+                }}
+                disabled={isAppReadOnly}
+                className={`p-2.5 bg-pitch-dark/50 border border-chalk-white/10 rounded-xl text-chalk-white ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale' : ''}`}
               >
                 <Plus size={20} />
               </button>
@@ -706,6 +745,17 @@ export function Dashboard() {
                                 {match.season}
                               </span>
                             )}
+                            {match.recordingUrl && (
+                              <a
+                                href={match.recordingUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-[8px] font-black uppercase tracking-[0.2em] px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/30 transition-all font-display italic flex items-center gap-1 shrink-0"
+                              >
+                                <Play size={8} className="fill-current animate-pulse" /> Video
+                              </a>
+                            )}
                           </div>
                           <h3 className="text-xl font-black text-chalk-white group-hover:text-pitch-green transition-colors leading-tight uppercase italic font-display tracking-tighter break-words">
                             {match.type === 'match' ? `vs ${match.opponent}` : 'Training'}
@@ -714,14 +764,30 @@ export function Dashboard() {
                         {isCoach && (
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button 
-                              onClick={(e) => { e.stopPropagation(); handleEditMatch(match); }}
-                              className="text-chalk-white/20 hover:text-pitch-green transition-colors p-2.5 bg-pitch-dark/40 rounded-xl border border-chalk-white/5"
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (isAppReadOnly) {
+                                  alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                                  return;
+                                }
+                                handleEditMatch(match); 
+                              }}
+                              disabled={isAppReadOnly}
+                              className={`text-chalk-white/20 hover:text-pitch-green transition-colors p-2.5 bg-pitch-dark/40 rounded-xl border border-chalk-white/5 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale' : ''}`}
                             >
                               <Pencil size={14} strokeWidth={3} />
                             </button>
                             <button 
-                              onClick={(e) => { e.stopPropagation(); handleDeleteMatch(match.id); }}
-                              className="text-chalk-white/20 hover:text-red-400 transition-colors p-2.5 bg-pitch-dark/40 rounded-xl border border-chalk-white/5"
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                if (isAppReadOnly) {
+                                  alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                                  return;
+                                }
+                                handleDeleteMatch(match.id); 
+                              }}
+                              disabled={isAppReadOnly}
+                              className={`text-chalk-white/20 hover:text-red-400 transition-colors p-2.5 bg-pitch-dark/40 rounded-xl border border-chalk-white/5 ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale' : ''}`}
                             >
                               <Trash2 size={14} strokeWidth={3} />
                             </button>
@@ -775,14 +841,30 @@ export function Dashboard() {
                                     <span className="text-xs font-black text-chalk-white/80 uppercase tracking-tight break-words italic font-display">{player.name}</span>
                                     <div className="flex gap-1 shrink-0">
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'going'); }}
-                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                                        onClick={(e) => { 
+                                          e.stopPropagation(); 
+                                          if (isAppReadOnly) {
+                                            alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                                            return;
+                                          }
+                                          handleSetAvailability(match.id, player.id, 'going'); 
+                                        }}
+                                        disabled={isAppReadOnly}
+                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-pitch-dark/50 text-chalk-white/10' : status === 'going' ? 'bg-pitch-green text-pitch-dark shadow-[0_0_15px_rgba(22,163,74,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                                       >
                                         <Check size={16} strokeWidth={4} />
                                       </button>
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); handleSetAvailability(match.id, player.id, 'not-going'); }}
-                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${status === 'not-going' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
+                                        onClick={(e) => { 
+                                          e.stopPropagation(); 
+                                          if (isAppReadOnly) {
+                                            alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                                            return;
+                                          }
+                                          handleSetAvailability(match.id, player.id, 'not-going'); 
+                                        }}
+                                        disabled={isAppReadOnly}
+                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-pitch-dark/50 text-chalk-white/10' : status === 'not-going' ? 'bg-red-500 text-pitch-dark shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-pitch-dark/50 text-chalk-white/10 hover:text-chalk-white/30'}`}
                                       >
                                         <X size={16} strokeWidth={4} />
                                       </button>
@@ -866,6 +948,16 @@ export function Dashboard() {
                       <OpponentSelector
                         value={newMatch.opponent || ''}
                         onChange={(value) => setNewMatch({ ...newMatch, opponent: value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Match Recording Link (Optional)</label>
+                      <input
+                        type="url"
+                        value={newMatch.recordingUrl || ''}
+                        onChange={(e) => setNewMatch({ ...newMatch, recordingUrl: e.target.value })}
+                        className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors placeholder:text-chalk-white/10"
+                        placeholder="e.g. YouTube, Hudl or Veo link"
                       />
                     </div>
                   </>
@@ -1061,6 +1153,16 @@ export function Dashboard() {
                       <OpponentSelector
                         value={editingMatch.opponent || ''}
                         onChange={(value) => setEditingMatch({ ...editingMatch, opponent: value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-chalk-white/40 mb-2 uppercase tracking-widest font-display italic">Match Recording Link (Optional)</label>
+                      <input
+                        type="url"
+                        value={editingMatch.recordingUrl || ''}
+                        onChange={(e) => setEditingMatch({ ...editingMatch, recordingUrl: e.target.value })}
+                        className="w-full bg-pitch-dark/50 border border-chalk-white/10 rounded-xl px-4 py-3.5 text-chalk-white font-bold focus:outline-none focus:border-pitch-green transition-colors placeholder:text-chalk-white/10"
+                        placeholder="e.g. YouTube, Hudl or Veo link"
                       />
                     </div>
                   </>

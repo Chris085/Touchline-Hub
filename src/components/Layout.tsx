@@ -24,7 +24,8 @@ import {
   Wallet,
   BookOpen,
   Sun,
-  Moon
+  Moon,
+  Mail
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ConfirmModal } from './ConfirmModal';
@@ -32,12 +33,16 @@ import { collection, query, where, onSnapshot, limit, orderBy, doc } from 'fireb
 import { db } from '../firebase';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTheme } from '../contexts/ThemeContext';
+import { ContactUsModal } from './ContactUsModal';
+import { EmailVerificationBanner } from './EmailVerificationBanner';
+import { triggerNotification } from '../lib/notifications';
 
 export function Layout() {
-  const { profile, signOut, deleteProfile, isSubscribed, isAdmin } = useAuth();
+  const { profile, signOut, deleteProfile, isSubscribed, isAdmin, emailVerified, sendVerificationEmail, isAppReadOnly } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const [activeMatch, setActiveMatch] = useState<boolean>(false);
   const [activeVoting, setActiveVoting] = useState<boolean>(false);
   const [teamData, setTeamData] = useState<any>(null);
@@ -199,12 +204,45 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 font-sans flex flex-col">
+      {/* Read Only/Verify Email Banner */}
+      {isAppReadOnly && (
+        <div className="bg-rose-500 text-slate-950 py-3 px-4 text-center text-xs font-black uppercase tracking-wider relative z-50 flex flex-col sm:flex-row items-center justify-center gap-3 border-b border-rose-600 shadow-lg no-print">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">⚠️</span>
+            <span>
+              {profile?.role === 'coach' 
+                ? "Your coach account is READ-ONLY. Please verify your email address to unlock full write access." 
+                : "This team is currently READ-ONLY. The head coach must verify their email address to unlock write access."
+              }
+            </span>
+          </div>
+          {profile?.role === 'coach' && (
+            <button
+              onClick={async () => {
+                try {
+                  await sendVerificationEmail();
+                  alert('Verification email resent!');
+                } catch (err: any) {
+                  alert(err.message || 'Failed to resend.');
+                }
+              }}
+              className="bg-slate-950 hover:bg-slate-900 border border-rose-600/30 text-[10px] text-rose-300 font-black uppercase tracking-widest px-3 py-1.5 rounded-lg transition-all"
+            >
+              Resend Verification Email
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Trial Banner */}
       {showTrialBanner && (
         <div className="bg-green-500 text-slate-950 py-1.5 px-4 text-center text-[10px] font-black uppercase tracking-[0.2em] relative z-40">
           Trial Active: {trialDaysLeft} Days Remaining • <Link to="/upgrade" className="underline hover:text-slate-50 transition-colors">Upgrade Now</Link>
         </div>
       )}
+
+      {/* Email Verification Banner */}
+      <EmailVerificationBanner />
 
       {/* Header */}
       <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-50">
@@ -318,9 +356,17 @@ export function Layout() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-slate-50 truncate">{profile?.displayName || 'User'}</p>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-                        {isAdmin ? 'Admin' : profile?.role}
-                      </p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold line-clamp-1">
+                          {isAdmin ? 'Admin' : profile?.role || 'User'}
+                        </span>
+                        <span className="text-slate-600 text-[10px]">•</span>
+                        {emailVerified ? (
+                          <span className="text-[9px] font-black uppercase tracking-wider text-green-400 flex items-center gap-0.5 shrink-0">Verified ✓</span>
+                        ) : (
+                          <span className="text-[9px] font-black uppercase tracking-wider text-yellow-500 flex items-center gap-0.5 shrink-0">Not Verified ⚠</span>
+                        )}
+                      </div>
                     </div>
                     <ChevronRight size={16} className="text-slate-600 group-hover:text-slate-400 transition-colors" />
                   </Link>
@@ -362,6 +408,17 @@ export function Layout() {
                       <span className="font-medium">Theme</span>
                     </div>
                     <span className="text-[10px] uppercase tracking-wider font-bold bg-slate-800 px-2 py-1 rounded-lg group-hover:bg-slate-700 transition-colors">{theme}</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsContactModalOpen(true);
+                    }}
+                    className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-slate-50 transition-all"
+                  >
+                    <Mail size={20} />
+                    <span className="font-medium">Contact Us</span>
                   </button>
                 </nav>
               </div>
@@ -496,6 +553,11 @@ export function Layout() {
         message={confirmModal.message}
         onConfirm={confirmModal.onConfirm}
         onCancel={closeConfirmModal}
+      />
+
+      <ContactUsModal 
+        isOpen={isContactModalOpen}
+        onClose={() => setIsContactModalOpen(false)}
       />
     </div>
   );

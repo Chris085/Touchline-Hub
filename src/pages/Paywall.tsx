@@ -3,15 +3,24 @@ import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'motion/react';
 import { Check, CreditCard, Key, Loader2, AlertCircle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { VerificationRequiredPlaceholder } from '../components/VerificationRequiredPlaceholder';
 
 export function Paywall() {
-  const { user, profile } = useAuth();
+  const { user, profile, emailVerified } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [code, setCode] = useState('');
   const [codeLoading, setCodeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  if (!emailVerified) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center p-4 sm:p-6">
+        <VerificationRequiredPlaceholder featureName="Subscription Upgrades" />
+      </div>
+    );
+  }
 
   const handleSubscribe = async () => {
     if (!user) return;

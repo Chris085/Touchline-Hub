@@ -17,7 +17,7 @@ export interface Drill {
 }
 
 export function TrainingLibrary() {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, isAppReadOnly } = useAuth();
   const [drills, setDrills] = useState<Drill[]>([]);
   const [matches, setMatches] = useState<any[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -185,12 +185,17 @@ export function TrainingLibrary() {
         {isCoach && (
           <button
             onClick={() => {
+              if (isAppReadOnly) {
+                alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                return;
+              }
               setTitle('');
               setDescription('');
               setUrl('');
               setShowAddModal(true);
             }}
-            className="w-12 h-12 sm:w-auto sm:h-auto sm:px-6 sm:py-3 bg-pitch-green hover:bg-pitch-accent text-pitch-dark rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(22,163,74,0.3)] font-display italic"
+            disabled={isAppReadOnly}
+            className={`w-12 h-12 sm:w-auto sm:h-auto sm:px-6 sm:py-3 bg-pitch-green hover:bg-pitch-accent text-pitch-dark rounded-xl font-black uppercase tracking-widest text-[10px] transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(22,163,74,0.3)] font-display italic ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-slate-700/50 shadow-none text-chalk-white/40' : ''}`}
           >
             <Plus size={20} strokeWidth={3} />
             <span className="hidden sm:inline">Add Drill</span>
@@ -243,14 +248,28 @@ export function TrainingLibrary() {
                 {isCoach && (
                   <div className="flex gap-2 self-end">
                     <button 
-                      onClick={() => openEditModal(drill)}
-                      className="w-8 h-8 flex items-center justify-center bg-chalk-white/5 hover:bg-chalk-white/10 text-chalk-white/60 rounded-lg transition-colors"
+                      onClick={() => {
+                        if (isAppReadOnly) {
+                          alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                          return;
+                        }
+                        openEditModal(drill);
+                      }}
+                      disabled={isAppReadOnly}
+                      className={`w-8 h-8 flex items-center justify-center bg-chalk-white/5 hover:bg-chalk-white/10 text-chalk-white/60 rounded-lg transition-colors ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale' : ''}`}
                     >
                       <Pencil size={14} />
                     </button>
                     <button 
-                      onClick={() => handleDeleteDrill(drill.id)}
-                      className="w-8 h-8 flex items-center justify-center bg-chalk-white/5 hover:bg-red-500/20 text-chalk-white/60 hover:text-red-400 rounded-lg transition-colors"
+                      onClick={() => {
+                        if (isAppReadOnly) {
+                          alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                          return;
+                        }
+                        handleDeleteDrill(drill.id);
+                      }}
+                      disabled={isAppReadOnly}
+                      className={`w-8 h-8 flex items-center justify-center bg-chalk-white/5 hover:bg-red-500/20 text-chalk-white/60 hover:text-red-400 rounded-lg transition-colors ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale' : ''}`}
                     >
                       <Trash2 size={14} />
                     </button>

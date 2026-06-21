@@ -45,7 +45,7 @@ interface ActivityItem {
 }
 
 export function Profile() {
-  const { profile, signOut, deleteProfile, isSubscribed, isAdmin, switchTeam, updateProfile } = useAuth();
+  const { profile, signOut, deleteProfile, isSubscribed, isAdmin, switchTeam, updateProfile, emailVerified } = useAuth();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -461,6 +461,17 @@ export function Profile() {
                 <Mail size={12} className="text-slate-500" />
                 {profile?.email}
               </div>
+              {emailVerified ? (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-550/10 text-green-400 text-xs font-bold uppercase tracking-wider border border-green-500/20">
+                  <span className="text-[13px] font-bold leading-none">✓</span>
+                  <span>Verified</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-bold uppercase tracking-wider border border-yellow-500/20">
+                  <span className="text-[13px] leading-none">⚠</span>
+                  <span>Not Verified</span>
+                </div>
+              )}
               {isSubscribed && (
                 <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/10 text-green-400 text-xs font-bold uppercase tracking-wider border border-green-500/20">
                   <Zap size={12} />

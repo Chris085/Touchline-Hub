@@ -34,6 +34,7 @@ import {
   Check
 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachMonthOfInterval, subMonths, isSameMonth } from 'date-fns';
+import { VerificationRequiredPlaceholder } from '../components/VerificationRequiredPlaceholder';
 
 interface PaymentSettings {
   collectMatchFees: boolean;
@@ -77,7 +78,7 @@ interface Player {
 }
 
 export function Payments() {
-  const { profile, isAdmin, isSubscribed } = useAuth();
+  const { profile, isAdmin, isSubscribed, emailVerified } = useAuth();
   const [team, setTeam] = useState<any>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [playerPayments, setPlayerPayments] = useState<Record<string, PlayerPayment>>({});
@@ -93,6 +94,10 @@ export function Payments() {
   const [addPaymentSuccess, setAddPaymentSuccess] = useState(false);
 
   const isCoach = profile?.role === 'coach' || isAdmin;
+
+  if (!emailVerified) {
+    return <VerificationRequiredPlaceholder featureName="Payment Management" />;
+  }
 
   useEffect(() => {
     if (!profile?.teamId) return;

@@ -8,7 +8,8 @@ import {
   GoogleAuthProvider,
   FacebookAuthProvider,
   updateProfile as updateFirebaseAuthProfile,
-  signOut as firebaseSignOut 
+  signOut as firebaseSignOut,
+  sendEmailVerification
 } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db, handleFirestoreError, OperationType, messaging, getToken, onMessage } from '../firebase';
@@ -36,6 +37,7 @@ export interface UserProfile {
     trainingReminder: boolean;
     liveMatchUpdates: boolean;
   };
+  isReadOnly?: boolean | string;
 }
 
 interface AuthContextType {
@@ -54,6 +56,10 @@ interface AuthContextType {
   switchTeam: (teamId: string) => Promise<void>;
   deleteProfile: () => Promise<void>;
   isAdmin: boolean;
+  emailVerified: boolean;
+  reloadUser: () => Promise<void>;
+  sendVerificationEmail: () => Promise<void>;
+  isAppReadOnly: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -64,6 +70,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<string | null>('all');
+  const [emailVerified, setEmailVerified] = useState<boolean>(false);
+  const [isCoachReadOnly, setIsCoachReadOnly] = useState<boolean>(false);
+  const [isTeamReadOnly, setIsTeamReadOnly] = useState<boolean>(false);
 
   const isSubscribed = !!(
     profile?.subscriptionStatus === 'active' || 
@@ -77,6 +86,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user?.uid === 'V45Buf6eA5ggg2JUFShJpj48y2y2'
   );
 
+  const isAppReadOnly = !!(
+    (profile?.role === 'coach' && (profile?.isReadOnly === 'true' || profile?.isReadOnly === true)) ||
+    (profile?.role && profile?.role !== 'coach' && isCoachReadOnly) ||
+    isTeamReadOnly
+  );
+
   if (error) {
     throw error;
   }
@@ -84,12 +99,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
     let unsubscribeTeam: (() => void) | null = null;
+    let unsubscribeCoach: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      setEmailVerified(currentUser?.emailVerified || false);
       
       if (unsubscribeProfile) unsubscribeProfile();
       if (unsubscribeTeam) unsubscribeTeam();
+      if (unsubscribeCoach) unsubscribeCoach();
 
       if (currentUser) {
         const userRef = doc(db, 'users', currentUser.uid);
@@ -108,6 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 
                 if (teamSnap.exists()) {
                   const teamData = teamSnap.data();
+                  setIsTeamReadOnly(teamData.isReadOnly === 'true' || teamData.isReadOnly === true);
                   
                   // If team has active subscription, all members are active
                   console.log(`[AuthContext] Team ${userData.teamId} data:`, teamData);
@@ -131,6 +150,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   if (teamData.seasonTag) {
                     setSelectedSeason(prev => prev === 'all' ? teamData.seasonTag : prev);
                   }
+
+                  // Listen to coach profile to check if read-only is true
+                  if (teamData.coachId && userData.role !== 'coach') {
+                    if (unsubscribeCoach) unsubscribeCoach();
+                    unsubscribeCoach = onSnapshot(doc(db, 'users', teamData.coachId), (coachSnap) => {
+                      if (coachSnap.exists()) {
+                        const coachData = coachSnap.data();
+                        setIsCoachReadOnly(coachData.isReadOnly === 'true' || coachData.isReadOnly === true);
+                      } else {
+                        setIsCoachReadOnly(false);
+                      }
+                    }, (err) => {
+                      console.error("Error listening to coach profile:", err);
+                      setIsCoachReadOnly(false);
+                    });
+                  } else {
+                    if (unsubscribeCoach) {
+                      unsubscribeCoach();
+                      unsubscribeCoach = null;
+                    }
+                    setIsCoachReadOnly(false);
+                  }
+                } else {
+                  setIsTeamReadOnly(false);
                 }
                 
                 // Special check for admin email
@@ -147,6 +190,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               });
             } else {
               // No team, just use user data
+              if (unsubscribeCoach) {
+                unsubscribeCoach();
+                unsubscribeCoach = null;
+              }
+              setIsCoachReadOnly(false);
+              setIsTeamReadOnly(false);
               let finalProfile = { ...userData };
               if (finalProfile.email === 'chrisjeal9@gmail.com') {
                 finalProfile.subscriptionStatus = 'active';
@@ -177,6 +226,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       } else {
         setProfile(null);
+        setIsCoachReadOnly(false);
+        setIsTeamReadOnly(false);
         setLoading(false);
       }
     });
@@ -185,6 +236,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribeAuth();
       if (unsubscribeProfile) unsubscribeProfile();
       if (unsubscribeTeam) unsubscribeTeam();
+      if (unsubscribeCoach) unsubscribeCoach();
     };
   }, []);
 
@@ -329,6 +381,89 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const reloadUser = async () => {
+    if (auth.currentUser) {
+      await auth.currentUser.reload();
+      const freshUser = auth.currentUser;
+      setUser(freshUser);
+      setEmailVerified(freshUser.emailVerified);
+      
+      if (freshUser.emailVerified) {
+        try {
+          const userRef = doc(db, 'users', freshUser.uid);
+          const endDate = new Date();
+          endDate.setMonth(endDate.getMonth() + 3);
+          const trialEndDateStr = endDate.toISOString();
+          
+          await setDoc(userRef, {
+            isReadOnly: false,
+            trialEndDate: trialEndDateStr
+          }, { merge: true });
+          
+          if (profile?.teamId) {
+            const teamRef = doc(db, 'teams', profile.teamId);
+            await setDoc(teamRef, {
+              isReadOnly: false
+            }, { merge: true });
+          }
+          console.log('[AuthContext] Successfully reloaded and unlocked verified user!');
+        } catch (err) {
+          console.error('[AuthContext] Error unlocking in reloadUser:', err);
+        }
+      }
+    }
+  };
+
+  const sendVerificationEmail = async () => {
+    if (auth.currentUser) {
+      await sendEmailVerification(auth.currentUser);
+    }
+  };
+
+  useEffect(() => {
+    const checkAndUnlockVerifiedUser = async () => {
+      if (user && emailVerified) {
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          
+          const endDate = new Date();
+          endDate.setMonth(endDate.getMonth() + 3);
+          const trialEndDateStr = endDate.toISOString();
+          
+          let userNeedsUpdate = false;
+          const userUpdates: Partial<UserProfile> = {};
+          
+          if (profile?.isReadOnly === true || profile?.isReadOnly === 'true') {
+            userUpdates.isReadOnly = false;
+            userNeedsUpdate = true;
+          }
+          
+          if (!profile?.trialEndDate || profile?.isReadOnly === true || profile?.isReadOnly === 'true') {
+            userUpdates.trialEndDate = trialEndDateStr;
+            userNeedsUpdate = true;
+          }
+          
+          if (userNeedsUpdate) {
+            await setDoc(userRef, userUpdates, { merge: true });
+            console.log('[AuthContext] Updated verified user isReadOnly and trialEndDate');
+          }
+          
+          if (profile?.teamId && isAppReadOnly) {
+            const teamRef = doc(db, 'teams', profile.teamId);
+            await setDoc(teamRef, {
+              isReadOnly: false
+            }, { merge: true });
+            console.log('[AuthContext] Set team isReadOnly to false');
+          }
+        } catch (error) {
+          console.error('[AuthContext] Error unlocking verified user:', error);
+        }
+      }
+    };
+    
+    checkAndUnlockVerifiedUser();
+  }, [user, emailVerified, profile?.teamId, profile?.isReadOnly, isAppReadOnly]);
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -345,7 +480,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut, 
       updateProfile, 
       switchTeam,
-      deleteProfile 
+      deleteProfile,
+      emailVerified,
+      reloadUser,
+      sendVerificationEmail,
+      isAppReadOnly
     }}>
       {children}
     </AuthContext.Provider>

@@ -3,8 +3,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { collection, query, where, onSnapshot, addDoc, doc, deleteDoc, getDoc, getDocs, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useNavigate } from 'react-router-dom';
-import { Users, Plus, Trash2, Shield, Copy, Check, UserPlus, ChevronRight, Zap } from 'lucide-react';
+import { Users, Plus, Trash2, Shield, Copy, Check, UserPlus, ChevronRight, Zap, AlertCircle, X } from 'lucide-react';
 import { motion } from 'motion/react';
+import { triggerNotification } from '../lib/notifications';
 
 interface Player {
   id: string;
@@ -20,7 +21,7 @@ interface Player {
 import { ConfirmModal } from '../components/ConfirmModal';
 
 export function Squad() {
-  const { profile, isSubscribed, isAdmin } = useAuth();
+  const { profile, isSubscribed, isAdmin, emailVerified, isAppReadOnly } = useAuth();
   const navigate = useNavigate();
   const [players, setPlayers] = useState<Player[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
@@ -39,6 +40,7 @@ export function Squad() {
   const [addLoading, setAddLoading] = useState(false);
   const [addSuccess, setAddSuccess] = useState(false);
   const [showTeamInviteModal, setShowTeamInviteModal] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -103,6 +105,15 @@ export function Squad() {
   };
 
   const handleInviteClick = async (player: Player) => {
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
+    if (!emailVerified) {
+      setVerificationError("Email verification is required to generate or copy parent invites.");
+      return;
+    }
     if (!player.inviteCode) {
       const newCode = generateInviteCode();
       try {
@@ -120,6 +131,12 @@ export function Squad() {
 
   const handleToggleParentStatus = async (player: Player) => {
     if (!profile?.uid) return;
+
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     const isParent = player.parentIds?.includes(profile.uid);
     const newParentIds = isParent 
       ? (player.parentIds || []).filter(uid => uid !== profile.uid)
@@ -137,6 +154,11 @@ export function Squad() {
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.teamId || !newPlayerName.trim() || !isSubscribed) return;
+
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
 
     setAddLoading(true);
     try {
@@ -165,6 +187,12 @@ export function Squad() {
   const handleJoinPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isSubscribed) return;
+
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     const code = joinCode.trim().toUpperCase();
     if (!code || !code.startsWith('P-')) {
       setJoinError('Please enter a valid player invite code (e.g. P-XXXXXX)');
@@ -228,6 +256,11 @@ export function Squad() {
   };
 
   const handleDeletePlayer = async (playerId: string) => {
+    if (isAppReadOnly) {
+      alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+      return;
+    }
+
     setConfirmModal({
       isOpen: true,
       title: 'Remove Player',
@@ -278,24 +311,35 @@ export function Squad() {
         <div className="flex flex-wrap gap-3">
           {isCoach && team && (
             <button
-              onClick={() => setShowTeamInviteModal(true)}
+              onClick={() => {
+                if (!emailVerified) {
+                  setVerificationError("Email verification is required to generate or view team coach/parent invite codes.");
+                  return;
+                }
+                setShowTeamInviteModal(true);
+              }}
               className="bg-pitch-dark/50 hover:bg-pitch-dark text-chalk-white px-5 py-3 rounded-xl font-bold flex items-center gap-3 transition-all border border-chalk-white/5 shadow-xl group"
             >
               {copied ? <Check size={18} className="text-pitch-green" /> : <Copy size={18} className="text-chalk-white/40 group-hover:text-pitch-green transition-colors" />}
-              <span className="text-xs uppercase tracking-wider">Code: <span className="font-mono text-pitch-green tracking-widest ml-1">{team.code}</span></span>
+              <span className="text-xs uppercase tracking-wider">Code: <span className="font-mono text-pitch-green tracking-widest ml-1">{emailVerified ? team.code : '••••••'}</span></span>
             </button>
           )}
           
           {isCoach && (
             <button
               onClick={() => {
+                if (isAppReadOnly) {
+                  alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                  return;
+                }
                 if (!isSubscribed) {
                   navigate('/upgrade');
                   return;
                 }
                 setShowAddModal(true);
               }}
-              className={`${isSubscribed ? 'bg-pitch-green hover:bg-pitch-accent shadow-pitch-green/20' : 'bg-slate-700 hover:bg-slate-600 shadow-none'} text-pitch-dark px-6 py-3 rounded-xl font-display italic uppercase font-black flex items-center gap-2 transition-all shadow-lg`}
+              disabled={isAppReadOnly}
+              className={`${isAppReadOnly ? 'bg-slate-700/50 shadow-none opacity-50 cursor-not-allowed filter grayscale text-chalk-white/40' : isSubscribed ? 'bg-pitch-green hover:bg-pitch-accent shadow-pitch-green/20' : 'bg-slate-700 hover:bg-slate-600 shadow-none'} text-pitch-dark px-6 py-3 rounded-xl font-display italic uppercase font-black flex items-center gap-2 transition-all shadow-lg`}
             >
               {isSubscribed ? <Plus size={20} strokeWidth={3} /> : <Zap size={18} className="text-chalk-white/60" />}
               <span className="hidden sm:inline">{isSubscribed ? 'Add Player' : 'Upgrade to Add'}</span>
@@ -305,6 +349,18 @@ export function Squad() {
           {/* Added only for coaches */}
         </div>
       </div>
+
+      {verificationError && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-500 flex items-center justify-between gap-3 text-xs font-bold uppercase tracking-wider font-display italic">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} />
+            <span>{verificationError}</span>
+          </div>
+          <button onClick={() => setVerificationError(null)} className="text-red-550/60 hover:text-red-500 shrink-0">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {players.length === 0 ? (
         <div className="bg-turf-surface/20 border border-chalk-white/5 rounded-[2rem] p-16 text-center relative overflow-hidden">
@@ -386,30 +442,45 @@ export function Squad() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (isAppReadOnly) {
+                          alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                          return;
+                        }
                         handleInviteClick(player);
                       }}
-                      className="text-chalk-white/40 hover:text-pitch-green transition-colors p-2 hover:bg-pitch-dark/50 rounded-lg"
-                      title="Invite Parent"
+                      disabled={isAppReadOnly}
+                      className={`text-chalk-white/40 hover:text-pitch-green transition-colors p-2 hover:bg-pitch-dark/50 rounded-lg ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-transparent text-chalk-white/10' : ''}`}
+                      title={isAppReadOnly ? "Read-Only Mode" : "Invite Parent"}
                     >
                       <UserPlus size={18} />
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (isAppReadOnly) {
+                          alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                          return;
+                        }
                         handleToggleParentStatus(player);
                       }}
-                      className={`transition-colors p-2 hover:bg-pitch-dark/50 rounded-lg ${player.parentIds?.includes(profile?.uid || '') ? 'text-pitch-green' : 'text-chalk-white/40 hover:text-pitch-green'}`}
-                      title={player.parentIds?.includes(profile?.uid || '') ? "Unlink as Parent" : "Link as Parent"}
+                      disabled={isAppReadOnly}
+                      className={`transition-colors p-2 hover:bg-pitch-dark/50 rounded-lg ${player.parentIds?.includes(profile?.uid || '') ? 'text-pitch-green' : 'text-chalk-white/40 hover:text-pitch-green'} ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-transparent text-chalk-white/10' : ''}`}
+                      title={isAppReadOnly ? "Read-Only Mode" : player.parentIds?.includes(profile?.uid || '') ? "Unlink as Parent" : "Link as Parent"}
                     >
                       <Users size={18} />
                     </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (isAppReadOnly) {
+                          alert('This team is currently in Read-Only mode. Please verify your email address to unlock access.');
+                          return;
+                        }
                         handleDeletePlayer(player.id);
                       }}
-                      className="text-chalk-white/20 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg"
-                      title="Remove Player"
+                      disabled={isAppReadOnly}
+                      className={`text-chalk-white/20 hover:text-red-500 transition-colors p-2 hover:bg-red-500/10 rounded-lg ${isAppReadOnly ? 'opacity-50 cursor-not-allowed filter grayscale bg-transparent text-chalk-white/10' : ''}`}
+                      title={isAppReadOnly ? "Read-Only Mode" : "Remove Player"}
                     >
                       <Trash2 size={18} />
                     </button>
