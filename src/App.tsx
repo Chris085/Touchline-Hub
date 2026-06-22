@@ -6,6 +6,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SubscriptionProvider } from './contexts/SubscriptionContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Layout } from './components/Layout';
@@ -27,6 +28,7 @@ import { Payments } from './pages/Payments';
 import { Learning } from './pages/Learning';
 import { TrainingLibrary } from './pages/TrainingLibrary';
 import { Terms } from './pages/Terms';
+import { Subscription } from './pages/Subscription';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -88,6 +90,7 @@ function AppRoutes() {
         <Route path="features" element={<Features />} />
         <Route path="learning" element={<Learning />} />
         <Route path="profile" element={<Profile />} />
+        <Route path="subscription" element={<Subscription />} />
         <Route path="admin" element={<Admin />} />
       </Route>
     </Routes>
@@ -99,9 +102,11 @@ export default function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
+          <SubscriptionProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </SubscriptionProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

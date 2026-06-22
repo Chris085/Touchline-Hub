@@ -604,13 +604,13 @@ export function Profile() {
                     </div>
 
                     {isSubscriptionOwner ? (
-                      <button
-                        onClick={handleManageSubscription}
-                        className="w-full py-3 bg-green-500 hover:bg-green-400 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                      <Link
+                        to="/subscription"
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-slate-50 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
                       >
                         <Settings size={16} />
-                        Manage Billing
-                      </button>
+                        Manage Subscription
+                      </Link>
                     ) : isSubscribed ? (
                       <div className="p-4 bg-green-500/5 rounded-2xl border border-green-500/10">
                         <p className="text-xs text-green-400/80 font-medium leading-relaxed">
@@ -619,11 +619,11 @@ export function Profile() {
                       </div>
                     ) : (
                       <Link
-                        to="/upgrade"
-                        className="w-full py-3 bg-green-500 hover:bg-green-400 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
+                        to="/subscription"
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-slate-50 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
                       >
                         <Zap size={16} />
-                        Upgrade to Premium
+                        View Subscription
                       </Link>
                     )}
                   </div>

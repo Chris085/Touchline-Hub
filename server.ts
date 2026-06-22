@@ -16,6 +16,50 @@ const __dirname = path.dirname(__filename);
 
 // Initialize Firebase Admin
 let db: any;
+
+// Define a defensive wrapper for db.collection to intercept any writes to "users" collection
+const wrapDb = (rawDb: any) => {
+  if (!rawDb) return rawDb;
+  return new Proxy(rawDb, {
+    get(target, prop, receiver) {
+      if (prop === 'collection') {
+        return function(collectionPath: string) {
+          const col = target.collection(collectionPath);
+          if (collectionPath === 'users') {
+            return new Proxy(col, {
+              get(colTarget, colProp) {
+                if (colProp === 'doc') {
+                  return function(docId?: string) {
+                    const docRef = colTarget.doc(docId);
+                    return new Proxy(docRef, {
+                      get(docTarget, docProp) {
+                        if (docProp === 'update' || docProp === 'set') {
+                          return function(data: any, ...args: any[]) {
+                            if (data && typeof data === 'object') {
+                              console.log("[Defensive Rule] Stripping isVerified and verificationToken from user doc write.");
+                              delete data.isVerified;
+                              delete data.verificationToken;
+                            }
+                            return docTarget[docProp](data, ...args);
+                          };
+                        }
+                        return Reflect.get(docTarget, docProp);
+                      }
+                    });
+                  };
+                }
+                return Reflect.get(colTarget, colProp);
+              }
+            });
+          }
+          return col;
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    }
+  });
+};
+
 const initializeDb = async () => {
   try {
     const configPath = path.join(process.cwd(), "firebase-applet-config.json");
@@ -29,8 +73,9 @@ const initializeDb = async () => {
       }
       // Use getFirestore from firebase-admin/firestore to specify databaseId if needed
       const { getFirestore } = await import("firebase-admin/firestore");
-      db = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId || "(default)");
-      console.log("Firebase Admin initialized successfully");
+      const rawDb = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId || "(default)");
+      db = wrapDb(rawDb);
+      console.log("Firebase Admin initialized successfully with Defensive Write Interceptors");
     } else {
       console.error("firebase-applet-config.json not found");
     }
@@ -82,8 +127,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Stripe Webhook needs raw body
-  app.post("/api/webhook", bodyParser.raw({ type: "application/json" }), async (req, res) => {
+  // Common webhook handler logic
+  const handleStripeWebhook = async (req: express.Request, res: express.Response) => {
     const sig = req.headers["stripe-signature"]!;
     let event;
 
@@ -113,14 +158,33 @@ async function startServer() {
             });
           }
 
-          await db.collection("subscriptions").add({
+          let currentPeriodEnd = "";
+          if (session.subscription) {
+            try {
+              const stripeSub = await stripe.subscriptions.retrieve(session.subscription as string);
+              currentPeriodEnd = new Date((stripeSub as any).current_period_end * 1000).toISOString();
+            } catch (errSub) {
+              console.error("Error retrieving Stripe subscription details:", errSub);
+            }
+          }
+
+          const subRef = db.collection("subscriptions").doc(userId);
+          const subSnap = await subRef.get();
+          const existingData = subSnap.exists ? subSnap.data() : {};
+
+          await subRef.set({
             userId,
-            status: "active",
             stripeCustomerId: session.customer as string,
             stripeSubscriptionId: session.subscription as string,
+            status: "active",
             plan: "premium",
-            createdAt: new Date().toISOString(),
-          });
+            trialStartDate: existingData?.trialStartDate || new Date().toISOString(),
+            trialEndDate: existingData?.trialEndDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            currentPeriodEnd: currentPeriodEnd || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: existingData?.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+
           console.log(`Subscription activated for user: ${userId}`);
         } catch (dbError) {
           console.error("Error updating subscription in Firestore:", dbError);
@@ -151,7 +215,20 @@ async function startServer() {
                 subscriptionStatus: status,
               });
             }
-            console.log(`Subscription ${status} for user: ${userId}`);
+
+            // Sync the subscriptions collection document
+            const subRef = db.collection("subscriptions").doc(userId);
+            let subStatus: "active" | "trial" | "expired" | "cancelled" = "active";
+            if (status === "inactive") {
+              subStatus = subscription.status === "canceled" ? "cancelled" : "expired";
+            }
+
+            await subRef.set({
+              status: subStatus,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            console.log(`Subscription status ${status} / ${subStatus} for user: ${userId}`);
           }
         } catch (dbError) {
           console.error("Error updating subscription status in Firestore:", dbError);
@@ -160,7 +237,11 @@ async function startServer() {
     }
 
     res.json({ received: true });
-  });
+  };
+
+  // Register both paths to the same raw body parser
+  app.post("/api/webhook", bodyParser.raw({ type: "application/json" }), handleStripeWebhook);
+  app.post("/api/stripe-webhook", bodyParser.raw({ type: "application/json" }), handleStripeWebhook);
 
   app.use(express.json());
 
@@ -189,8 +270,8 @@ async function startServer() {
           },
         ],
         mode: "subscription",
-        success_url: `${appUrl}/?success=true`,
-        cancel_url: `${appUrl}/?canceled=true`,
+        success_url: `${appUrl}/subscription?success=true`,
+        cancel_url: `${appUrl}/subscription?canceled=true`,
         client_reference_id: userId,
         customer_email: email,
       });
@@ -201,7 +282,7 @@ async function startServer() {
   });
 
   // Create Stripe Customer Portal Session
-  app.post("/api/create-portal-session", async (req, res) => {
+  const handlePortalSession = async (req: express.Request, res: express.Response) => {
     const { userId } = req.body;
     if (!db) return res.status(500).json({ error: "Database not initialized" });
     
@@ -216,7 +297,7 @@ async function startServer() {
       const appUrl = process.env.APP_URL || "http://localhost:3000";
       const session = await stripe.billingPortal.sessions.create({
         customer: userData.stripeCustomerId,
-        return_url: `${appUrl}/`,
+        return_url: `${appUrl}/subscription`,
       });
 
       res.json({ url: session.url });
@@ -224,7 +305,10 @@ async function startServer() {
       console.error("Error creating portal session:", error);
       res.status(500).json({ error: error.message });
     }
-  });
+  };
+
+  app.post("/api/create-portal-session", handlePortalSession);
+  app.post("/api/create-customer-portal", handlePortalSession);
 
   // Push Notification Helper
   const sendNotification = async (tokens: string[], title: string, body: string, data?: any) => {
@@ -360,6 +444,71 @@ async function startServer() {
     } catch (err: any) {
       console.error("Error submitting contact form:", err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/send-verification-email", async (req, res) => {
+    const { userId, email } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: "Missing userId" });
+    }
+    if (!db) {
+      return res.status(500).json({ error: "Database not initialized" });
+    }
+
+    try {
+      const userDocObj = await db.collection("users").doc(userId).get();
+      const userData = userDocObj.exists ? userDocObj.data() : null;
+      
+      const targetEmail = email || (userData ? userData.email : null);
+      if (!targetEmail) {
+        return res.status(400).json({ error: "Unable to find target email for user" });
+      }
+
+      const verificationToken = userData ? userData.verificationToken : null;
+      if (!verificationToken) {
+        console.warn(`[Verification Mailer] User ${userId} does not have a verificationToken set in Firestore yet.`);
+        return res.status(400).json({ 
+          error: "No verification token found for your account. Please register through touchlinehub.com or contact support." 
+        });
+      }
+
+      if (!process.env.RESEND_API_KEY) {
+        console.warn("[Verification Mailer] RESEND_API_KEY is not configured.");
+        return res.status(500).json({ error: "Email delivery system not configured in environment" });
+      }
+
+      // Construct verification link pointing to website backend (touchlinehub.com / custom APP_URL in staging)
+      const appUrl = process.env.APP_URL || "http://localhost:3000";
+      const isDev = appUrl.includes("localhost") || appUrl.includes("ais-dev") || appUrl.includes("run.app");
+      const baseSiteUrl = isDev ? appUrl : "https://touchlinehub.com";
+      const verificationLink = `${baseSiteUrl}/verify-email?uid=${userId}&token=${verificationToken}`;
+
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      await resend.emails.send({
+        from: 'onboarding@resend.dev',
+        to: targetEmail,
+        subject: 'Verify your Touchline Hub email address',
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
+            <h2 style="color: #10b981;">Verify Your Email Address</h2>
+            <p>Welcome to Touchline Hub! Please verify your email address to unlock all features and secure your account.</p>
+            <div style="margin: 30px 0; text-align: center;">
+              <a href="${verificationLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email Address</a>
+            </div>
+            <p style="font-size: 12px; color: #666;">If you didn't request this email, you can safely ignore it.</p>
+            <p style="font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 15px; margin-top: 25px;">
+              Verification Link: <a href="${verificationLink}" style="color: #10b981;">${verificationLink}</a>
+            </p>
+          </div>
+        `
+      });
+
+      console.log(`[Verification Mailer] Verification email successfully sent via Resend to ${targetEmail}`);
+      return res.json({ success: true, message: "Verification email sent successfully" });
+    } catch (err: any) {
+      console.error("[Verification Mailer] Failed to send verification email:", err);
+      return res.status(500).json({ error: err.message || "Failed to send verification email" });
     }
   });
 

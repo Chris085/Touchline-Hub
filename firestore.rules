@@ -58,14 +58,13 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && 
              (request.auth.uid == "V45Buf6eA5ggg2JUFShJpj48y2y2" || 
-              (request.auth.token != null && "email" in request.auth.token && request.auth.token.email == "chrisjeal9@gmail.com") ||
-              (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == "chrisjeal9@gmail.com"));
+              (request.auth.token != null && "email" in request.auth.token && request.auth.token.email == "chrisjeal9@gmail.com"));
     }
 
     // ===============================================================
     // Domain Validators
     // ===============================================================
+
     function isValidUser(data) {
       return hasRequiredFields(['uid', 'email']) &&
              data.uid is string &&
@@ -78,7 +77,10 @@ service cloud.firestore {
              (!('subscriptionStatus' in data) || data.subscriptionStatus in ['active', 'inactive']) &&
              (!('trialEndDate' in data) || data.trialEndDate is string) &&
              (!('stripeCustomerId' in data) || data.stripeCustomerId is string) &&
-             (!('fcmToken' in data) || data.fcmToken is string);
+             (!('fcmToken' in data) || data.fcmToken is string) &&
+             (!('isReadOnly' in data) || data.isReadOnly is bool || data.isReadOnly is string) &&
+             (!('isVerified' in data) || data.isVerified is bool) &&
+             (!('verificationToken' in data) || data.verificationToken is string);
     }
 
     function isValidTeam(data) {
@@ -346,8 +348,8 @@ service cloud.firestore {
     }
 
     match /subscriptions/{subscriptionId} {
-      allow read: if isAdmin() || isOwner(resource.data.userId);
-      allow write: if isAdmin();
+      allow read: if isAuthenticated() && (isAdmin() || subscriptionId == request.auth.uid || (resource != null && resource.data.userId == request.auth.uid));
+      allow write: if isAuthenticated() && (isAdmin() || subscriptionId == request.auth.uid || (request.resource != null && (request.resource.data.userId == request.auth.uid || request.resource.data.get('userId', '') == request.auth.uid)));
     }
 
     match /coachCodes/{codeId} {

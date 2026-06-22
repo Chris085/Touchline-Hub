@@ -25,7 +25,8 @@ import {
   BookOpen,
   Sun,
   Moon,
-  Mail
+  Mail,
+  CheckCircle
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { ConfirmModal } from './ConfirmModal';
@@ -35,6 +36,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useTheme } from '../contexts/ThemeContext';
 import { ContactUsModal } from './ContactUsModal';
 import { EmailVerificationBanner } from './EmailVerificationBanner';
+import { useSubscription } from '../contexts/SubscriptionContext';
 import { triggerNotification } from '../lib/notifications';
 
 export function Layout() {
@@ -46,6 +48,21 @@ export function Layout() {
   const [activeMatch, setActiveMatch] = useState<boolean>(false);
   const [activeVoting, setActiveVoting] = useState<boolean>(false);
   const [teamData, setTeamData] = useState<any>(null);
+  const [showVerifySuccess, setShowVerifySuccess] = useState<boolean>(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('verified') === 'true') {
+      setShowVerifySuccess(true);
+      setTimeout(() => setShowVerifySuccess(false), 8000);
+
+      // Clean the query parameter from URL bar
+      params.delete('verified');
+      const newSearch = params.toString();
+      const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, [location.search]);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -179,14 +196,21 @@ export function Layout() {
     },
   ];
 
-  const trialDaysLeft = profile?.trialEndDate 
-    ? Math.ceil((new Date(profile.trialEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-    : 0;
+  const { daysRemaining, isTrial, isExpired, status: subStatus } = useSubscription();
 
+  // If coach and not active nor admin and trial days left is 14 or less
   const showTrialBanner = (profile?.role === 'coach' || isAdmin) && 
-                          profile?.subscriptionStatus !== 'active' && 
+                          subStatus !== 'active' && 
                           profile?.email !== 'chrisjeal9@gmail.com' &&
-                          trialDaysLeft > 0;
+                          isTrial() &&
+                          daysRemaining <= 14;
+
+  let bannerBgClass = "bg-blue-600 text-slate-50";
+  if (daysRemaining <= 3) {
+    bannerBgClass = "bg-rose-600 text-slate-50";
+  } else if (daysRemaining <= 7) {
+    bannerBgClass = "bg-amber-500 text-slate-950";
+  }
 
   const bottomNavItems = navItems.filter(item => 
     (item.alwaysShow || (item.dynamic && item.active && (!item.coachOnly || profile?.role === 'coach' || isAdmin))) &&
@@ -234,10 +258,34 @@ export function Layout() {
         </div>
       )}
 
+      {/* Trial Expired Banner */}
+      {isExpired() && (profile?.role === 'coach') && profile?.email !== 'chrisjeal9@gmail.com' && (
+        <div className="bg-rose-600 text-slate-50 py-3 px-4 text-center text-xs font-black uppercase tracking-wider relative z-50 flex flex-col sm:flex-row items-center justify-center gap-3 border-b border-rose-700 shadow-lg no-print">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">⚠️</span>
+            <span>Your free trial has ended. Subscribe to continue managing your team.</span>
+          </div>
+          <div className="flex gap-2">
+            <Link
+              to="/subscription"
+              className="bg-slate-950 hover:bg-slate-900 border border-rose-700/35 text-[10px] text-rose-300 font-black uppercase tracking-widest px-3 py-1.5 rounded-lg transition-all"
+            >
+              Subscribe Now
+            </Link>
+            <button
+              onClick={() => setIsContactModalOpen(true)}
+              className="bg-rose-800 hover:bg-rose-750 text-[10px] text-rose-100 font-black uppercase tracking-widest px-3 py-1.5 rounded-lg transition-all"
+            >
+              Contact Support
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Trial Banner */}
       {showTrialBanner && (
-        <div className="bg-green-500 text-slate-950 py-1.5 px-4 text-center text-[10px] font-black uppercase tracking-[0.2em] relative z-40">
-          Trial Active: {trialDaysLeft} Days Remaining • <Link to="/upgrade" className="underline hover:text-slate-50 transition-colors">Upgrade Now</Link>
+        <div className={`${bannerBgClass} py-2 px-4 text-center text-[10px] font-black uppercase tracking-[0.2em] relative z-40`}>
+          Your free trial ends in {daysRemaining} days. • <Link to="/subscription" className="underline hover:text-slate-50 transition-colors">Upgrade Now</Link>
         </div>
       )}
 
@@ -436,23 +484,23 @@ export function Layout() {
                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                         <p className="text-sm font-bold text-slate-50">Premium Active</p>
                       </div>
-                    ) : trialDaysLeft > 0 ? (
+                    ) : daysRemaining > 0 ? (
                       <div className="space-y-3">
                         <div className="flex justify-between items-end">
-                          <p className="text-lg font-black text-slate-50 leading-none">{trialDaysLeft} Days</p>
+                          <p className="text-lg font-black text-slate-50 leading-none">{daysRemaining} Days</p>
                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Trial Remaining</p>
                         </div>
                         <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
                           <motion.div 
                             initial={{ width: 0 }}
-                            animate={{ width: `${Math.max(5, Math.min(100, (trialDaysLeft / 90) * 100))}%` }}
-                            className="h-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+                            animate={{ width: `${Math.max(5, Math.min(100, (daysRemaining / 30) * 100))}%` }}
+                            className="h-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.4)]"
                           />
                         </div>
                         <Link 
-                          to="/upgrade" 
+                          to="/subscription" 
                           onClick={() => setIsMenuOpen(false)}
-                          className="flex items-center justify-center gap-2 w-full py-2.5 bg-green-500 hover:bg-green-400 text-slate-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all active:scale-95"
+                          className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-500 hover:bg-indigo-400 text-slate-50 text-xs font-black uppercase tracking-wider rounded-xl transition-all active:scale-95"
                         >
                           Upgrade Now
                         </Link>
@@ -559,6 +607,26 @@ export function Layout() {
         isOpen={isContactModalOpen}
         onClose={() => setIsContactModalOpen(false)}
       />
+
+      {/* Verification Success Toast */}
+      <AnimatePresence>
+        {showVerifySuccess && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 50 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 50 }}
+            className="fixed bottom-20 right-5 z-50 bg-slate-900 border border-emerald-500/30 text-emerald-300 px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 max-w-sm sm:max-w-md"
+          >
+            <div className="w-8 h-8 rounded-full bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0">
+              <CheckCircle size={20} />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs uppercase tracking-wider text-slate-50 font-display italic">Email Verified!</h4>
+              <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">Your coach account has been successfully verified, restoring full write capabilities.</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

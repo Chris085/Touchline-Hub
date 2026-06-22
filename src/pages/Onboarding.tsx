@@ -75,11 +75,15 @@ export function Onboarding() {
         // We just need to make sure our local state is updated if we're going to use it.
         subscriptionUpdates.subscriptionStatus = 'active';
       } else if (startTrial) {
-        // Start standard 3-month trial
-        const endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + 3);
-        subscriptionUpdates.trialEndDate = endDate.toISOString();
-        subscriptionUpdates.subscriptionStatus = 'inactive'; // Still inactive but has trial date
+        // Start standard 30-day trial automatically
+        const trialStart = new Date();
+        const trialEnd = new Date();
+        trialEnd.setDate(trialEnd.getDate() + 30);
+        
+        subscriptionUpdates.trialStartDate = trialStart.toISOString();
+        subscriptionUpdates.trialEndDate = trialEnd.toISOString();
+        subscriptionUpdates.trialDaysRemaining = 30;
+        subscriptionUpdates.subscriptionStatus = 'inactive'; // Inherited user status
       }
 
       if (inviteCode) {
@@ -123,18 +127,39 @@ export function Onboarding() {
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         const teamId = `team_${Date.now()}`;
         
+        // If created with email and password, set the team's isReadOnly to true
+        const isEmailPassword = user?.providerData?.some((p) => p.providerId === 'password');
+        const isTeamReadOnly = isEmailPassword ? true : false;
+        const isTeamVerified = isEmailPassword ? false : true;
+
         const teamRef = doc(db, 'teams', teamId);
         await setDoc(teamRef, {
           name: teamName,
           code,
           coachId: user?.uid,
           matchDuration: 45,
+          isReadOnly: isTeamReadOnly,
+          isVerified: isTeamVerified,
           ...subscriptionUpdates
         });
 
         // Store subscription updates in state to apply later if needed, 
         // but for now we apply them to the profile immediately
         await updateProfile({ ...subscriptionUpdates });
+
+        // Set up the subscriptions collection record
+        if (subscriptionUpdates.trialEndDate && user?.uid) {
+          const subRef = doc(db, 'subscriptions', user.uid);
+          await setDoc(subRef, {
+            userId: user.uid,
+            status: 'trial',
+            trialStartDate: subscriptionUpdates.trialStartDate,
+            trialEndDate: subscriptionUpdates.trialEndDate,
+            trialDaysRemaining: 30,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
 
         // Show success screen instead of immediately redirecting
         setCreatedTeam({ id: teamId, code });

@@ -25,7 +25,9 @@ export interface UserProfile {
   teamId?: string;
   joinedTeams?: { teamId: string; role: Role; teamName: string }[];
   subscriptionStatus?: 'active' | 'inactive';
+  trialStartDate?: string;
   trialEndDate?: string;
+  trialDaysRemaining?: number;
   codeType?: 'full' | 'trial';
   stripeCustomerId?: string;
   fcmToken?: string;
@@ -38,6 +40,8 @@ export interface UserProfile {
     liveMatchUpdates: boolean;
   };
   isReadOnly?: boolean | string;
+  isVerified?: boolean;
+  verificationToken?: string;
 }
 
 interface AuthContextType {
@@ -73,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [emailVerified, setEmailVerified] = useState<boolean>(false);
   const [isCoachReadOnly, setIsCoachReadOnly] = useState<boolean>(false);
   const [isTeamReadOnly, setIsTeamReadOnly] = useState<boolean>(false);
+  const [isCoachUnverified, setIsCoachUnverified] = useState<boolean>(false);
 
   const isSubscribed = !!(
     profile?.subscriptionStatus === 'active' || 
@@ -85,10 +90,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user?.email === 'chrisjeal9@gmail.com' || 
     user?.uid === 'V45Buf6eA5ggg2JUFShJpj48y2y2'
   );
+  
+  const isEmailVerified = emailVerified || profile?.isVerified === true;
+
+  const isTrialExpired = !!(
+    profile?.role === 'coach' &&
+    profile?.subscriptionStatus !== 'active' &&
+    profile?.trialEndDate &&
+    new Date(profile.trialEndDate) <= new Date() &&
+    profile.email !== 'chrisjeal9@gmail.com'
+  );
 
   const isAppReadOnly = !!(
-    (profile?.role === 'coach' && (profile?.isReadOnly === 'true' || profile?.isReadOnly === true)) ||
-    (profile?.role && profile?.role !== 'coach' && isCoachReadOnly) ||
+    (profile?.role === 'coach' && (profile?.isReadOnly === 'true' || profile?.isReadOnly === true || isTrialExpired || !isEmailVerified)) ||
+    (profile?.role && profile?.role !== 'coach' && (isCoachReadOnly || isCoachUnverified)) ||
     isTeamReadOnly
   );
 
@@ -151,19 +166,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setSelectedSeason(prev => prev === 'all' ? teamData.seasonTag : prev);
                   }
 
-                  // Listen to coach profile to check if read-only is true
+                  // Listen to coach profile to check if read-only is true or isVerified is false
                   if (teamData.coachId && userData.role !== 'coach') {
                     if (unsubscribeCoach) unsubscribeCoach();
                     unsubscribeCoach = onSnapshot(doc(db, 'users', teamData.coachId), (coachSnap) => {
                       if (coachSnap.exists()) {
                         const coachData = coachSnap.data();
                         setIsCoachReadOnly(coachData.isReadOnly === 'true' || coachData.isReadOnly === true);
+                        setIsCoachUnverified(!coachData.isVerified);
                       } else {
                         setIsCoachReadOnly(false);
+                        setIsCoachUnverified(false);
                       }
                     }, (err) => {
                       console.error("Error listening to coach profile:", err);
                       setIsCoachReadOnly(false);
+                      setIsCoachUnverified(false);
                     });
                   } else {
                     if (unsubscribeCoach) {
@@ -171,6 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                       unsubscribeCoach = null;
                     }
                     setIsCoachReadOnly(false);
+                    setIsCoachUnverified(false);
                   }
                 } else {
                   setIsTeamReadOnly(false);
@@ -195,6 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 unsubscribeCoach = null;
               }
               setIsCoachReadOnly(false);
+              setIsCoachUnverified(false);
               setIsTeamReadOnly(false);
               let finalProfile = { ...userData };
               if (finalProfile.email === 'chrisjeal9@gmail.com') {
@@ -211,7 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               displayName: currentUser.displayName || '',
               photoURL: currentUser.photoURL || '',
               role: null,
-              subscriptionStatus: currentUser.email === 'chrisjeal9@gmail.com' ? 'active' : 'inactive',
+              subscriptionStatus: currentUser.email === 'chrisjeal9@gmail.com' ? 'active' : 'inactive'
             };
             try {
               await setDoc(userRef, newProfile);
@@ -335,17 +355,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateProfile = async (updates: Partial<UserProfile>) => {
     if (!user) return;
     try {
+      // Defensive rule: never allow setting/overriding isVerified and verificationToken from the app
+      delete updates.isVerified;
+      delete updates.verificationToken;
+
       const docRef = doc(db, 'users', user.uid);
-      const currentProfile = profile || {
+      const currentProfile: any = profile ? { ...profile } : {
         uid: user.uid,
         email: user.email || '',
         displayName: user.displayName || '',
         photoURL: user.photoURL || '',
         role: null,
       };
+      
+      delete currentProfile.isVerified;
+      delete currentProfile.verificationToken;
+
       const updatedProfile = { ...currentProfile, ...updates };
+      
+      delete updatedProfile.isVerified;
+      delete updatedProfile.verificationToken;
+
       await setDoc(docRef, updatedProfile, { merge: true });
-      setProfile(updatedProfile as UserProfile);
+      setProfile({ ...(profile || {}), ...updates } as UserProfile);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
     }
@@ -416,13 +448,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const sendVerificationEmail = async () => {
     if (auth.currentUser) {
-      await sendEmailVerification(auth.currentUser);
+      // 1. Try to send via our secure and reliable Resend custom email helper
+      try {
+        const response = await fetch('/api/send-verification-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userId: auth.currentUser.uid,
+            email: auth.currentUser.email
+          })
+        });
+
+        if (response.ok) {
+          console.log('[AuthContext] Verification email sent successfully via secure Resend helper');
+          return;
+        } else {
+          const errData = await response.json().catch(() => ({ error: 'Unknown' }));
+          console.warn('[AuthContext] Resend mail helper declined/not configured:', errData.error);
+        }
+      } catch (proxyErr) {
+        console.warn('[AuthContext] Failed to connect to secure verification helper:', proxyErr);
+      }
+
+      // 2. Fall back to standard native client-only Firebase Verification if proxy failed
+      try {
+        console.log('[AuthContext] Falling back to standard Firebase verification email...');
+        await sendEmailVerification(auth.currentUser);
+      } catch (fbErr) {
+        console.warn('Standard Firebase email verification failed or disabled:', fbErr);
+        throw fbErr;
+      }
     }
   };
 
   useEffect(() => {
     const checkAndUnlockVerifiedUser = async () => {
-      if (user && emailVerified) {
+      if (user && isEmailVerified) {
         try {
           const userRef = doc(db, 'users', user.uid);
           
@@ -462,7 +525,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     
     checkAndUnlockVerifiedUser();
-  }, [user, emailVerified, profile?.teamId, profile?.isReadOnly, isAppReadOnly]);
+  }, [user, isEmailVerified, profile?.teamId, profile?.isReadOnly, isAppReadOnly]);
 
   return (
     <AuthContext.Provider value={{ 
@@ -481,7 +544,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateProfile, 
       switchTeam,
       deleteProfile,
-      emailVerified,
+      emailVerified: isEmailVerified,
       reloadUser,
       sendVerificationEmail,
       isAppReadOnly
