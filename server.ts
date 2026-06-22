@@ -447,70 +447,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/send-verification-email", async (req, res) => {
-    const { userId, email } = req.body;
-    if (!userId) {
-      return res.status(400).json({ error: "Missing userId" });
-    }
-    if (!db) {
-      return res.status(500).json({ error: "Database not initialized" });
-    }
 
-    try {
-      const userDocObj = await db.collection("users").doc(userId).get();
-      const userData = userDocObj.exists ? userDocObj.data() : null;
-      
-      const targetEmail = email || (userData ? userData.email : null);
-      if (!targetEmail) {
-        return res.status(400).json({ error: "Unable to find target email for user" });
-      }
-
-      const verificationToken = userData ? userData.verificationToken : null;
-      if (!verificationToken) {
-        console.warn(`[Verification Mailer] User ${userId} does not have a verificationToken set in Firestore yet.`);
-        return res.status(400).json({ 
-          error: "No verification token found for your account. Please register through touchlinehub.com or contact support." 
-        });
-      }
-
-      if (!process.env.RESEND_API_KEY) {
-        console.warn("[Verification Mailer] RESEND_API_KEY is not configured.");
-        return res.status(500).json({ error: "Email delivery system not configured in environment" });
-      }
-
-      // Construct verification link pointing to website backend (touchlinehub.com / custom APP_URL in staging)
-      const appUrl = process.env.APP_URL || "http://localhost:3000";
-      const isDev = appUrl.includes("localhost") || appUrl.includes("ais-dev") || appUrl.includes("run.app");
-      const baseSiteUrl = isDev ? appUrl : "https://touchlinehub.com";
-      const verificationLink = `${baseSiteUrl}/verify-email?uid=${userId}&token=${verificationToken}`;
-
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
-        from: 'onboarding@resend.dev',
-        to: targetEmail,
-        subject: 'Verify your Touchline Hub email address',
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
-            <h2 style="color: #10b981;">Verify Your Email Address</h2>
-            <p>Welcome to Touchline Hub! Please verify your email address to unlock all features and secure your account.</p>
-            <div style="margin: 30px 0; text-align: center;">
-              <a href="${verificationLink}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email Address</a>
-            </div>
-            <p style="font-size: 12px; color: #666;">If you didn't request this email, you can safely ignore it.</p>
-            <p style="font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 15px; margin-top: 25px;">
-              Verification Link: <a href="${verificationLink}" style="color: #10b981;">${verificationLink}</a>
-            </p>
-          </div>
-        `
-      });
-
-      console.log(`[Verification Mailer] Verification email successfully sent via Resend to ${targetEmail}`);
-      return res.json({ success: true, message: "Verification email sent successfully" });
-    } catch (err: any) {
-      console.error("[Verification Mailer] Failed to send verification email:", err);
-      return res.status(500).json({ error: err.message || "Failed to send verification email" });
-    }
-  });
 
   // Background task for unconfirmed schedule entries (runs every hour)
   setInterval(async () => {

@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user?.uid === 'V45Buf6eA5ggg2JUFShJpj48y2y2'
   );
   
-  const isEmailVerified = emailVerified || profile?.isVerified === true;
+  const isEmailVerified = !!emailVerified;
 
   const isTrialExpired = !!(
     profile?.role === 'coach' &&
@@ -447,39 +447,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const sendVerificationEmail = async () => {
-    if (auth.currentUser) {
-      // 1. Try to send via our secure and reliable Resend custom email helper
-      try {
-        const response = await fetch('/api/send-verification-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            userId: auth.currentUser.uid,
-            email: auth.currentUser.email
-          })
-        });
+    console.log('[AuthContext] sendVerificationEmail invoked. Current user:', auth.currentUser?.email);
+    if (!auth.currentUser) {
+      console.error('[AuthContext] Verification failed: User not logged in.');
+      throw new Error('User not logged in');
+    }
 
-        if (response.ok) {
-          console.log('[AuthContext] Verification email sent successfully via secure Resend helper');
-          return;
-        } else {
-          const errData = await response.json().catch(() => ({ error: 'Unknown' }));
-          console.warn('[AuthContext] Resend mail helper declined/not configured:', errData.error);
-        }
-      } catch (proxyErr) {
-        console.warn('[AuthContext] Failed to connect to secure verification helper:', proxyErr);
-      }
-
-      // 2. Fall back to standard native client-only Firebase Verification if proxy failed
-      try {
-        console.log('[AuthContext] Falling back to standard Firebase verification email...');
-        await sendEmailVerification(auth.currentUser);
-      } catch (fbErr) {
-        console.warn('Standard Firebase email verification failed or disabled:', fbErr);
-        throw fbErr;
-      }
+    console.log('[AuthContext] Attempting to send verification email directly using Firebase client SDK...');
+    try {
+      await sendEmailVerification(auth.currentUser);
+      console.log('[AuthContext] Direct sendEmailVerification call resolved successfully.');
+    } catch (fbErr: any) {
+      console.error('[AuthContext] Standard Firebase email verification failed:', fbErr);
+      throw fbErr;
     }
   };
 

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { auth } from '../firebase';
+import { sendEmailVerification } from 'firebase/auth';
 import { Mail, AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -7,7 +9,7 @@ const COOLDOWN_KEY = 'touchlinehub_verification_cooldown';
 const COOLDOWN_SECONDS = 60;
 
 export function EmailVerificationBanner() {
-  const { user, emailVerified, reloadUser, sendVerificationEmail } = useAuth();
+  const { user, emailVerified, reloadUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,51 +51,77 @@ export function EmailVerificationBanner() {
     return null;
   }
 
-  const handleResend = async () => {
-    if (cooldown > 0 || loading) return;
+  const handleSendVerificationEmail = async () => {
+    console.log('[EmailVerificationBanner] Send verification button clicked.');
+    if (cooldown > 0 || loading) {
+      console.log('[EmailVerificationBanner] Blocked from sending: cooldown active or already loading.');
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     setSuccess(false);
 
     try {
-      await sendVerificationEmail();
+      console.log('[EmailVerificationBanner] Checking if auth.currentUser exists.');
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        console.error('[EmailVerificationBanner] auth.currentUser is null. User not logged in.');
+        throw new Error('User not logged in');
+      }
+
+      console.log('[EmailVerificationBanner] Before sending email via sendEmailVerification client SDK...');
+      await sendEmailVerification(currentUser);
+      console.log('[EmailVerificationBanner] Send verification email success: call resolved successfully.');
+      
       setSuccess(true);
       localStorage.setItem(COOLDOWN_KEY, Date.now().toString());
       setCooldown(COOLDOWN_SECONDS);
-      
+
       console.log('[Analytics] Verification Email Sent', {
-        userId: user.uid,
-        email: user.email,
+        userId: currentUser.uid,
+        email: currentUser.email,
         timestamp: new Date().toISOString()
       });
     } catch (err: any) {
-      console.error('Error sending verification email:', err);
+      console.error('[EmailVerificationBanner] Error sending verification email:', err);
       setError(err?.message || 'Failed to send verification email. Please try again.');
     } finally {
       setLoading(false);
+      console.log('[EmailVerificationBanner] Loading state reset.');
     }
   };
 
   const handleVerifyCheck = async () => {
+    console.log('[EmailVerificationBanner] Verify My Email button clicked.');
     if (loading) return;
     setLoading(true);
     setError(null);
     try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('User not logged in');
+      }
+
+      console.log('[EmailVerificationBanner] Reloading auth.currentUser to fetch fresh verified status...');
+      await currentUser.reload();
+      console.log('[EmailVerificationBanner] Reload complete. fresh emailVerified status:', currentUser.emailVerified);
+
+      // Call reloadUser of custom AuthContext as well to update React state
       await reloadUser();
       
-      // Check again from the newly reloaded auth state
-      if (user && user.emailVerified) {
+      if (currentUser.emailVerified) {
         console.log('[Analytics] Verification Completed', {
-          userId: user.uid,
-          email: user.email,
+          userId: currentUser.uid,
+          email: currentUser.email,
           timestamp: new Date().toISOString()
         });
       } else {
-        // Still not verified
+        console.warn('[EmailVerificationBanner] Email address is still unverified after reload.');
         setError('Email address is still not verified. Please check your inbox and click the verification link.');
       }
     } catch (err: any) {
-      console.error('Error checking verification status:', err);
+      console.error('[EmailVerificationBanner] Error checking verification status:', err);
       setError(err?.message || 'Failed to check verification status.');
     } finally {
       setLoading(false);
@@ -130,7 +158,7 @@ export function EmailVerificationBanner() {
               </span>
             ) : (
               <button
-                onClick={handleResend}
+                onClick={handleSendVerificationEmail}
                 disabled={cooldown > 0 || loading}
                 className={`text-[9px] sm:text-[10px] font-black uppercase tracking-widest font-display italic px-4 py-2 rounded-lg transition-all flex items-center gap-1.5 border border-yellow-500/20 ${
                   cooldown > 0 || loading
